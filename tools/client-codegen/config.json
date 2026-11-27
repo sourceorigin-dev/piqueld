@@ -46,6 +46,16 @@
       "rustType": "piqueld_core::api::Envelope<piqueld_core::api::HostConfiguration>"
     },
     {
+      "schema": "Envelope_Setting",
+      "name": "EnvelopeSetting",
+      "rustType": "piqueld_core::api::Envelope<piqueld_core::api::Setting>"
+    },
+    {
+      "schema": "SettingChange",
+      "name": "SettingChange",
+      "rustType": "piqueld_core::api::SettingChange"
+    },
+    {
       "schema": "Envelope_Operation",
       "name": "EnvelopeOperation",
       "rustType": "piqueld_core::api::Envelope<piqueld_core::Operation>"

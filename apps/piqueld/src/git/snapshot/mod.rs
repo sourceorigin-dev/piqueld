@@ -1,6 +1,6 @@
 //! Snapshots of local worktrees, uploaded by `preview deploy --local` as Git
-//! bundles. Each untrusted bundle is streamed to disk within `[snapshots]
-//! max_upload_bytes`, then received into a private repository of its own: its
+//! bundles. Each untrusted bundle is streamed to disk within the
+//! `snapshots.max_upload_bytes` setting, then received into a private repository of its own: its
 //! header must name one snapshot ref, `git bundle verify` and
 //! `transfer.fsckObjects` check it, its prerequisites (fetched from the
 //! application's repository) must share one base the snapshot descends from, and
@@ -21,7 +21,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 /// Why an upload was refused. Details stay in the daemon's logs.
 #[derive(Debug, thiserror::Error)]
 pub enum SnapshotError {
-    /// The bundle is larger than `[snapshots] max_upload_bytes`.
+    /// The bundle is larger than `snapshots.max_upload_bytes`.
     #[error("the snapshot bundle is larger than the {limit}-byte upload limit")]
     TooLarge {
         /// The limit, in bytes.

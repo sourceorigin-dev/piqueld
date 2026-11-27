@@ -74,7 +74,7 @@ fn traffic(report: TrafficReport, measure: RwSignal<Measure>) -> AnyView {
     let counting = (!report.counting).then(|| {
         notice(
             Tone::Info,
-            "piqueld isn't counting traffic now. Set ingress.enabled and ingress.traffic in its configuration, then restart it. Counts recorded before stay here.",
+            "piqueld isn't counting traffic now. It needs ingress.enabled in its configuration, and Count traffic on the Settings page. Counts recorded before stay here.",
         )
     });
     if totals.requests == 0 {

@@ -102,7 +102,7 @@ fn schema_ranges_are_enforced() {
 
     let schema = DaemonConfig::json_schema();
     let checked = check(&schema["definitions"], &schema, "", false);
-    assert!(checked > 10, "only {checked} bounds were found");
+    assert!(checked > 5, "only {checked} bounds were found");
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn socket_and_database_use_separate_directories() {
 #[test]
 fn parse_failures_keep_the_diagnostic_but_not_the_source_line() {
     let error = DaemonConfig::from_toml(
-        "[server]\nport = 7845\n\n[auth]\nmax_token_days = 90\npublic_url = 'https://secret-token.example.com'\nunknown_key = true",
+        "[server]\nport = 7845\n\n[auth]\n# token lifetimes are daemon settings\npublic_url = 'https://secret-token.example.com'\nunknown_key = true",
     )
     .expect_err("the config is invalid");
     let ConfigError::Parse(diagnostic) = &error else {

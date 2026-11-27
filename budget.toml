@@ -10,8 +10,8 @@ piqueld-config = 6
 piqueld-core = 25
 piqueld-docker = 10
 piqueld-probe = 2
-piqueld-store = 21
-piqueld-ui = 60
+piqueld-store = 20
+piqueld-ui = 59
 xtask = 4
 
 [wall-clock]

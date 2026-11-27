@@ -458,10 +458,7 @@ async fn tailnet_bound_token(temp: &TempDir) -> (ApiState, piqueld::auth::Auth, 
     let store = Store::open_unsynced(&database)
         .await
         .expect("the store opens");
-    let tokens = TokenPolicy {
-        max_days: None,
-        tailnet: true,
-    };
+    let tokens = TokenPolicy { tailnet: true };
     let auth = Auth::configured(&store, "https://piqueld.example", tokens)
         .expect("the auth service builds");
     let create = piqueld_core::auth::Manage::CreateToken {

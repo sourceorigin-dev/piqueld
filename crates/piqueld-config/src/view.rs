@@ -1,4 +1,5 @@
-//! The read-only configuration view the dashboard shows.
+//! The read-only view of the host's settings the dashboard shows. Daemon
+//! settings, which the API changes, are reported by the store instead.
 use super::DaemonConfig;
 use crate::dns::provider::DnsProvider;
 use piqueld_core::api::HostConfiguration;
@@ -31,7 +32,8 @@ fn joined<T: Display>(values: impl IntoIterator<Item = T>) -> String {
 }
 
 impl DaemonConfig {
-    /// Projects effective settings into the read-only public dashboard response.
+    /// Projects the host's settings into the read-only groups of the public
+    /// dashboard response, leaving its daemon settings for the caller to add.
     ///
     /// Settings are grouped by section and rendered as display strings, e.g.
     /// `Server` -> `HTTP port` -> `7845`. Credentials appear only as their source.
@@ -41,17 +43,6 @@ impl DaemonConfig {
             ("Server".into(), self.server_view()),
             ("Docker".into(), self.docker_view()),
             ("Builds".into(), self.build_view()),
-            ("Ingress".into(), self.ingress_view()),
-            ("Reconciliation".into(), self.reconciliation_view()),
-            ("Retention".into(), self.retention_view()),
-            ("Previews".into(), self.previews_view()),
-            (
-                "Local snapshots".into(),
-                group([(
-                    "Largest upload (bytes)",
-                    self.snapshots.max_upload_bytes.to_string(),
-                )]),
-            ),
             (
                 "Git checkouts".into(),
                 group([(
@@ -59,15 +50,17 @@ impl DaemonConfig {
                     self.checkouts.max_bytes.to_string(),
                 )]),
             ),
-            ("Images".into(), self.images_view()),
-            ("Authentication".into(), self.auth_view()),
+            ("Ingress".into(), self.ingress_view()),
             ("Tailscale".into(), self.tailscale_view()),
             ("Private ingress".into(), self.private_ingress_view()),
             ("Cloudflare Tunnel".into(), self.tunnel_view()),
             ("Observability".into(), self.observability_view()),
         ]);
         groups.extend(self.dns_view().map(|view| ("DNS providers".into(), view)));
-        HostConfiguration { groups }
+        HostConfiguration {
+            groups,
+            settings: Vec::new(),
+        }
     }
 
     /// Builds the `Server` group.
@@ -100,113 +93,11 @@ impl DaemonConfig {
             Some(remote) => group([
                 ("Builder", remote.builder.to_string()),
                 ("Image repository", remote.repository.to_string()),
-                (
-                    "While unreachable",
-                    match remote.unavailable {
-                        piqueld_core::build_machine::WhenUnavailable::Fail => {
-                            "Deployments that build fail"
-                        }
-                        piqueld_core::build_machine::WhenUnavailable::Local => {
-                            "Images build on this host"
-                        }
-                    }
-                    .into(),
-                ),
             ]),
             None => group([("Builder", "This host's Docker Engine".into())]),
         };
         view.insert("Parallel builds".into(), self.build.parallel.to_string());
         view
-    }
-
-    /// Builds the `Reconciliation` group.
-    fn reconciliation_view(&self) -> Group {
-        let reconciliation = &self.reconciliation;
-        group([
-            (
-                "Scan interval (seconds)",
-                reconciliation.scan_interval_seconds.to_string(),
-            ),
-            (
-                "Preparation timeout (seconds)",
-                reconciliation.prepare_timeout_seconds.to_string(),
-            ),
-            (
-                "Convergence timeout (seconds)",
-                reconciliation.convergence_timeout_seconds.to_string(),
-            ),
-        ])
-    }
-
-    /// Builds the `Images` group.
-    fn images_view(&self) -> Group {
-        group([
-            (
-                "Deployments kept per environment",
-                self.images.keep_deployments.to_string(),
-            ),
-            (
-                "Deployments kept in the registry",
-                self.images.registry_keep_deployments.to_string(),
-            ),
-            (
-                "Cleanup interval (seconds)",
-                self.images.cleanup_interval_seconds.to_string(),
-            ),
-        ])
-    }
-
-    /// Builds the `Previews` group.
-    fn previews_view(&self) -> Group {
-        let previews = &self.previews;
-        group([
-            ("Per application", previews.max_per_application.to_string()),
-            ("Installation-wide", previews.max_total.to_string()),
-            (
-                "Default CPU (millicores)",
-                previews.default_cpu_millis.to_string(),
-            ),
-            (
-                "Default memory (bytes)",
-                previews.default_memory_bytes.to_string(),
-            ),
-            ("Replicas per service", previews.max_replicas.to_string()),
-        ])
-    }
-
-    /// Builds the `Retention` group.
-    fn retention_view(&self) -> Group {
-        let (retention, builds) = (&self.retention, &self.build_history);
-        group([
-            (
-                "Deployment history (days)",
-                retention.deployment_days.to_string(),
-            ),
-            (
-                "Deployments per environment",
-                retention.deployments_per_environment.to_string(),
-            ),
-            (
-                "Other finished operations (days)",
-                retention.finished_operation_days.to_string(),
-            ),
-            ("Events (days)", retention.event_days.to_string()),
-            ("Traffic (days)", retention.traffic_days.to_string()),
-            ("Build output (days)", builds.log_retention_days.to_string()),
-            (
-                "Build output limit (bytes)",
-                builds.log_max_bytes.to_string(),
-            ),
-        ])
-    }
-
-    /// Builds the `Authentication` group.
-    fn auth_view(&self) -> Group {
-        let days = self.auth.max_token_days;
-        group([(
-            "Longest token lifetime (days)",
-            days.map_or_else(|| "unlimited".into(), |days| days.to_string()),
-        )])
     }
 
     /// Builds the `Tailscale` group. The auth key appears only as its file.
@@ -248,7 +139,6 @@ impl DaemonConfig {
                 "Webhook hostname",
                 or_none(ingress.webhook_hostname.as_ref()),
             ),
-            ("Traffic counting", ingress.traffic.to_string()),
         ])
     }
 
@@ -342,11 +232,6 @@ impl DaemonConfig {
                 "Telemetry containers",
                 self.telemetry.containers.to_string(),
             ),
-            (
-                "Daemon history (days)",
-                self.retention.daemon_event_days.to_string(),
-            ),
-            ("Audit trail (days)", self.retention.audit_days.to_string()),
         ])
     }
 }

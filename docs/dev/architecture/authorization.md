@@ -151,7 +151,8 @@ Creating any credential or link also needs a recent passkey sign-in
 [authentication](authentication.md#credentials-and-cookies)), checked after
 the scope and grant checks in the same transaction. So does `set_user_grants`
 when `Grants::escalates`: the new grants add `admin` on an application, or
-`accounts:manage` or `system:operate`, compared with the account's grants
+`accounts:manage`, `system:operate` or `settings:manage`, compared with the
+account's grants
 in the transaction. Removing access never needs it.
 
 Deleting an application removes the grants on it once the application row is

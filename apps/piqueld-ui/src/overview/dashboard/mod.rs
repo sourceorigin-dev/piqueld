@@ -128,7 +128,7 @@ impl ApplicationRow {
     }
 }
 
-/// How previews use the daemon's `[previews]` limits, across the whole
+/// How previews use the daemon's `previews` limits, across the whole
 /// installation and each application, from least to most constrained.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum PreviewLoad {

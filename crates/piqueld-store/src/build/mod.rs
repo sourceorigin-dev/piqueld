@@ -147,16 +147,11 @@ impl BuildRow {
 }
 
 impl Store {
-    /// Configures output retention and the per-build byte cap.
+    /// The most output bytes a build starting now keeps,
+    /// `build_history.log_max_bytes`. A build keeps the cap it started with.
     #[must_use]
-    pub fn with_build_history(mut self, policy: piqueld_core::BuildHistoryConfig) -> Self {
-        self.build_history = policy;
-        self
-    }
-    /// The most output bytes a build keeps.
-    #[must_use]
-    pub const fn build_log_max_bytes(&self) -> u32 {
-        self.build_history.log_max_bytes
+    pub fn build_log_max_bytes(&self) -> u32 {
+        self.settings().build_history.log_max_bytes
     }
     /// Records a new running build attempt for one service of an operation, or
     /// a job run when `job` names the job, and returns its row ID.
@@ -177,8 +172,8 @@ impl Store {
         Ok(self.write(sqlx::query!("INSERT INTO builds(environment_id,operation_id,service,job,source_json,state,started_at_ms) VALUES(?1,?2,?3,?4,?5,'running',?6)",app,operation,service,job,source,now)).await.map_err(StoreError::database)?.last_insert_rowid())
     }
     /// Appends build output, splitting it into chunks of at most 4096 bytes.
-    /// Output past the per-build byte cap is dropped and the build is marked
-    /// truncated; nothing more is accepted after truncation, expiry, or completion.
+    /// Output past `cap`, the build's byte cap, is dropped and the build is
+    /// marked truncated; nothing more is accepted after truncation, expiry, or completion.
     /// Cut points never split a UTF-8 sequence, so multibyte text survives paging.
     ///
     /// # Errors
@@ -188,9 +183,12 @@ impl Store {
         id: i64,
         bytes: &[u8],
         stream: LogStream,
+        cap: u32,
     ) -> Result<LogAppend, StoreError> {
         let (_writer, mut tx) = self.begin_immediate().await?;
-        let appended = self.append_build_log_on(&mut tx, id, bytes, stream).await?;
+        let appended = self
+            .append_build_log_on(&mut tx, id, bytes, stream, cap)
+            .await?;
         tx.commit().await.map_err(StoreError::database)?;
         Ok(appended)
     }
@@ -201,6 +199,7 @@ impl Store {
         id: i64,
         bytes: &[u8],
         stream: LogStream,
+        cap: u32,
     ) -> Result<LogAppend, StoreError> {
         let stream = stream.as_str();
         let timestamp = now_ms();
@@ -215,9 +214,7 @@ impl Store {
         if row.log_expired != 0 || row.log_truncated != 0 || row.state != "running" {
             return Ok(LogAppend::Closed);
         }
-        let remaining = i64::from(self.build_history.log_max_bytes)
-            .saturating_sub(row.log_bytes)
-            .max(0);
+        let remaining = i64::from(cap).saturating_sub(row.log_bytes).max(0);
         let mut count = bytes
             .len()
             .min(usize::try_from(remaining).map_err(StoreError::invalid_input)?);
@@ -294,8 +291,8 @@ impl Store {
     /// its image, and the build it reused that image from, if any. In the
     /// same transaction, appends `ending`'s output and marks the log
     /// truncated if `ending` says so, so a build never finishes without the
-    /// end of its output. Already finished builds are left unchanged;
-    /// `Running` is invalid input.
+    /// end of its output, within `cap`, the build's byte cap. Already
+    /// finished builds are left unchanged; `Running` is invalid input.
     ///
     /// # Errors
     /// Returns a storage error; then nothing is written.
@@ -304,6 +301,7 @@ impl Store {
         id: i64,
         outcome: &BuildOutcome,
         ending: &LogEnding,
+        cap: u32,
     ) -> Result<(), StoreError> {
         if outcome.state == BuildState::Running {
             return Err(StoreError::InvalidInput);
@@ -311,7 +309,7 @@ impl Store {
         let (_writer, mut tx) = self.begin_immediate().await?;
         for (stream, bytes) in &ending.output {
             if self
-                .append_build_log_on(&mut tx, id, bytes, *stream)
+                .append_build_log_on(&mut tx, id, bytes, *stream, cap)
                 .await?
                 == LogAppend::Closed
             {
@@ -424,7 +422,7 @@ impl Store {
     /// # Errors
     /// Returns a storage error.
     pub async fn prune_build_logs(&self) -> Result<(), StoreError> {
-        let cutoff = days_ago_ms(self.build_history.log_retention_days.into());
+        let cutoff = days_ago_ms(self.settings().build_history.log_retention_days.into());
         let (_writer, mut tx) = self.begin_immediate().await?;
         sqlx::query!("DELETE FROM build_log_chunks WHERE build_id IN (SELECT id FROM builds WHERE finished_at_ms<?1 AND log_expired=0)",cutoff).execute(&mut *tx).await.map_err(StoreError::database)?;
         sqlx::query!(

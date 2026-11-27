@@ -651,7 +651,7 @@ pub(super) async fn directory(
 /// `accounts:manage` and every grant the account holds; handing out grants
 /// requires holding them (403 `permission_denied` or `permission_exceeded`).
 /// Creating tokens, invitations or enrollment links, and handing out `admin`,
-/// `accounts:manage` or `system:operate`, need a passkey sign-in within the
+/// `accounts:manage`, `system:operate` or `settings:manage`, need a passkey sign-in within the
 /// last 2 minutes.
 #[utoipa::path(post,path="/api/v1/auth/manage",operation_id="authManage",request_body=Manage,responses((status=200,body=Managed),(status=403,response=inline(super::openapi::ReauthenticationResponse))))]
 pub(super) async fn manage(

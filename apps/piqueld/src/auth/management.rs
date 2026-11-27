@@ -122,7 +122,7 @@ impl Auth {
                         "tailnet bindings need the daemon's tailnet node (tailscale.enabled) or a dashboard hostname (ingress.private.dashboard_hostname)",
                     ));
                 }
-                if let Some(limit) = self.0.tokens.max_days
+                if let Some(limit) = store.settings().auth.max_token_days
                     && days.is_none_or(|days| days > limit)
                 {
                     return Err(AuthError::Invalid(

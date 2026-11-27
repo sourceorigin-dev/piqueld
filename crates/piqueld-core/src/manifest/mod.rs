@@ -40,7 +40,7 @@ mod template;
 /// Shared tests for manifest variables and templates.
 #[cfg(test)]
 mod template_tests;
-mod validation;
+pub(crate) mod validation;
 mod variables;
 
 pub use declaration::{Declaration, DeclaredSource, EnvironmentChange};
@@ -59,7 +59,7 @@ pub use input::{
     SecretEncoding, SecretGenerator, SecretMount, Service, Source, SourceRepository, Variable,
     Volume,
 };
-pub use limits::{PreviewLimits, PreviewLimitsError};
+pub use limits::PreviewLimits;
 pub use links::{Export, Import, ValidatedExport, ValidatedImport};
 pub use rollout::{
     Rollback, Rollout, RolloutOrder, RolloutOrderSource, RolloutPolicy, ValidatedRollout,

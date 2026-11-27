@@ -242,8 +242,9 @@ Deleting the application deletes its previews, with their volumes.
 ## Limits
 
 Previews share the host with production, so the daemon's
-[`[previews]` settings](../reference/configuration-settings.md#previews-table)
-limit them:
+[`previews` settings](../reference/daemon-settings.md#previews-section)
+limit them. Change them on the dashboard's **Settings** page or with
+`piquelctl settings set`; see [changing daemon settings](../operations/settings.md):
 
 - `max_per_application` and `max_total` cap how many previews there are.
 - `max_replicas` caps the replicas of each preview service.
@@ -252,7 +253,7 @@ limit them:
   manifest sets is kept, even above these defaults.
 
 A service capped or given a default runs anyway. `piquelctl preview show`
-reports it, such as `Bounded: web runs with the [previews] default of 500
+reports it, such as `Bounded: web runs with the previews default of 500
 millicores of CPU and 536870912 bytes of memory, since its manifest sets no
 limit`, and the dashboard marks the preview **Bounded**.
 
@@ -262,7 +263,7 @@ limit`, and the dashboard marks the preview **Bounded**.
   doesn't read its manifest from Git. Connect a repository first; see
   [deploying on push](deploy-on-push.md#connect-the-application-to-the-repository).
 - **Creating fails with `preview_limit_reached`.** The application, or the
-  host, has as many previews as `[previews]` allows. The error lists them:
+  host, has as many previews as the `previews` settings allow. The error lists them:
   delete one you no longer need.
 - **`--local` says no remote-tracking branch has an ancestor of `HEAD`.**
   None of your worktree's commits was pushed, so piqueld would need the whole
@@ -276,7 +277,7 @@ limit`, and the dashboard marks the preview **Bounded**.
   that its files take more than the daemon checks out,** or fails with
   `snapshot_too_large`. The upload or the worktree is larger than the daemon
   accepts:
-  [`snapshots.max_upload_bytes`](../reference/configuration-settings.md#snapshotsmax_upload_bytes)
+  [`snapshots.max_upload_bytes`](../reference/daemon-settings.md#snapshotsmax_upload_bytes)
   and [`checkouts.max_bytes`](../reference/configuration-settings.md#checkoutsmax_bytes).
   When the files are too large, the command names the largest ones.
 - **`--local` refuses the worktree.** Git submodules, nested repositories,

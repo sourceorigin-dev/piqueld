@@ -55,7 +55,6 @@ impl Scenario {
             "alpn-acme.example.test:127.0.0.1".into(),
         ];
         gateway.private_port = Some(port("PIQUELD_INGRESS_PRIVATE_PORT"));
-        gateway.traffic = true;
         let gateway = Arc::new(gateway);
         let counting = CancellationToken::new();
         let traffic = gateway

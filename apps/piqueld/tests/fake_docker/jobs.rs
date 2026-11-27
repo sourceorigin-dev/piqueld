@@ -651,9 +651,7 @@ async fn shutdown_lets_a_running_job_record_its_interruption() {
     let shutdown = CancellationToken::new();
     let run = harness.controller.run(
         Arc::default(),
-        Duration::from_mins(1),
-        0,
-        0,
+        Some(Duration::from_mins(1)),
         shutdown.clone(),
     );
     let stop = async {

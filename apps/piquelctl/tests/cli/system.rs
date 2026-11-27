@@ -23,9 +23,28 @@ fn status_works_over_tcp_and_unix_with_clean_json() {
     }
 }
 
+/// A daemon setting as the API reports it.
+fn setting(value: u64, source: &str) -> Value {
+    json!({
+        "key": "retention.event_days", "section": "History",
+        "label": "Application events (days)",
+        "description": "Days application events are kept.",
+        "value": value, "default": 90, "source": source,
+        "kind": {"type": "integer", "minimum": 0, "nullable": false}
+    })
+}
+
 #[test]
-fn resources_and_settings_show_the_daemon_measurements_and_host_settings() {
-    let server = start_server(false, 3, |request| match request.path.as_str() {
+fn resources_and_settings_show_the_daemon_measurements_and_settings() {
+    let server = start_server(false, 4, |request| match request.path.as_str() {
+        "/api/v1/system/settings/retention.event_days" => {
+            assert_eq!(request.method, "PUT");
+            assert_eq!(
+                serde_json::from_slice::<Value>(&request.body).expect("the request body is JSON"),
+                json!({"value": 30})
+            );
+            Reply::json(setting(30, "changed"))
+        }
         "/api/v1/system/resources" => Reply::json(json!({
             "sampled_at_ms": 1_700_000_000_000_i64, "uptime_seconds": 273_600,
             "memory_bytes": 50_331_648, "cpu_seconds": 12.5, "cpu_percent": null,
@@ -36,10 +55,13 @@ fn resources_and_settings_show_the_daemon_measurements_and_host_settings() {
             "oldest_queued_operation_ms": 125_000, "oldest_pending_delivery_ms": null,
             "waiting_writes": 1, "write_waits": 12, "write_wait_ms": 340
         })),
-        "/api/v1/system/configuration" => Reply::json(json!({"groups": {
-            "Docker": {"Socket": "/run/docker.sock"},
-            "Server": {"HTTP listen mode": "unix", "HTTP port": "7845"}
-        }})),
+        "/api/v1/system/configuration" => Reply::json(json!({
+            "groups": {
+                "Docker": {"Socket": "/run/docker.sock"},
+                "Server": {"HTTP listen mode": "unix", "HTTP port": "7845"}
+            },
+            "settings": [setting(90, "default")]
+        })),
         path => panic!("unexpected request to {path}"),
     });
     let output = run_human(&server, &["resources"]);
@@ -63,11 +85,22 @@ fn resources_and_settings_show_the_daemon_measurements_and_host_settings() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "Docker:\n  Socket: /run/docker.sock\n\nServer:\n  HTTP listen mode: unix\n  HTTP port: 7845\n"
+        "Docker (configuration file only):\n  Socket: /run/docker.sock\n\n\
+         Server (configuration file only):\n  HTTP listen mode: unix\n  HTTP port: 7845\n\n\
+         History:\n  retention.event_days: 90 (default)\n"
     );
-    let settings = assert_json_success(&run(&server, &["settings"]));
+    let settings = assert_json_success(&run(&server, &["settings", "list"]));
     assert_eq!(settings["groups"]["Server"]["HTTP port"], "7845");
-    assert_eq!(server.finish().len(), 3);
+    let output = run_human(&server, &["settings", "set", "retention.event_days", "30"]);
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with(
+            "retention.event_days: 30\n  Name: Application events (days)\n  Source: changed\n"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(server.finish().len(), 4);
 }
 
 #[test]

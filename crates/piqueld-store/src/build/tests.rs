@@ -10,6 +10,9 @@ fn succeeded(image: &str) -> BuildOutcome {
     }
 }
 
+/// The byte cap of the fixture's builds.
+const CAP: u32 = 70_000;
+
 struct Fixture {
     _temp: tempfile::TempDir,
     store: Store,
@@ -26,11 +29,11 @@ impl Fixture {
         let temp = tempfile::tempdir().expect("tempdir succeeds");
         let store = Store::open_unsynced(temp.path().join("state.db"))
             .await
-            .expect("open unsynced succeeds")
-            .with_build_history(piqueld_core::BuildHistoryConfig {
-                log_max_bytes: 70_000,
-                log_retention_days: 1,
-            });
+            .expect("open unsynced succeeds");
+        store.assume_settings(|settings| {
+            settings.build_history.log_max_bytes = CAP;
+            settings.build_history.log_retention_days = 1;
+        });
         let app = crate::testing::prebuilt("app-build-test");
         let operation = store
             .save_application(&ApplicationTemplate::from(&app), None, None)
@@ -107,7 +110,7 @@ async fn record(
         .await
         .expect("build commit succeeds");
     store
-        .finish_build(id, &outcome, &LogEnding::default())
+        .finish_build(id, &outcome, &LogEnding::default(), CAP)
         .await
         .expect("finish build succeeds");
     id
@@ -165,7 +168,7 @@ async fn build_metadata_obeys_the_writer_gate() {
     let ending = LogEnding::default();
     let (commit, finish, recover) = tokio::join!(
         tokio::time::timeout(blocked, store.build_commit(id, "commit")),
-        tokio::time::timeout(blocked, store.finish_build(id, &failed, &ending)),
+        tokio::time::timeout(blocked, store.finish_build(id, &failed, &ending, CAP)),
         tokio::time::timeout(blocked, store.recover_builds()),
     );
     assert!(commit.is_err(), "commit metadata bypassed the writer gate");
@@ -181,6 +184,7 @@ async fn build_metadata_obeys_the_writer_gate() {
             id,
             &BuildOutcome::without_image(BuildState::Failed),
             &LogEnding::default(),
+            CAP,
         )
         .await
         .expect("finish build succeeds");
@@ -204,7 +208,7 @@ async fn output_survives_concurrent_metadata_writes_for_another_build() {
     let output = async {
         for _ in 0..8 {
             store
-                .append_build_log(id, &[b'a'; 4096], LogStream::Stdout)
+                .append_build_log(id, &[b'a'; 4096], LogStream::Stdout, CAP)
                 .await?;
         }
         Ok::<_, StoreError>(())
@@ -214,7 +218,12 @@ async fn output_survives_concurrent_metadata_writes_for_another_build() {
             store.build_commit(other, "commit").await?;
         }
         store
-            .finish_build(other, &succeeded("sha256:fixture"), &LogEnding::default())
+            .finish_build(
+                other,
+                &succeeded("sha256:fixture"),
+                &LogEnding::default(),
+                CAP,
+            )
             .await
     };
     tokio::try_join!(output, metadata).expect("the tasks succeed");
@@ -320,7 +329,7 @@ async fn output_is_bounded_paged_and_expired_without_losing_metadata() {
     let id = *id;
     assert_eq!(
         store
-            .append_build_log(id, &vec![b'a'; 80_000], LogStream::Stdout)
+            .append_build_log(id, &vec![b'a'; 80_000], LogStream::Stdout, CAP)
             .await
             .expect("append build log succeeds"),
         LogAppend::Closed
@@ -352,12 +361,12 @@ async fn output_is_bounded_paged_and_expired_without_losing_metadata() {
     );
     assert!(second.previous_offset.is_none());
     store
-        .finish_build(id, &succeeded("sha256:fixture"), &LogEnding::default())
+        .finish_build(id, &succeeded("sha256:fixture"), &LogEnding::default(), CAP)
         .await
         .expect("finish build succeeds");
     assert_eq!(
         store
-            .append_build_log(id, b"late", LogStream::Stdout)
+            .append_build_log(id, b"late", LogStream::Stdout, CAP)
             .await
             .expect("append build log succeeds"),
         LogAppend::Closed
@@ -412,7 +421,7 @@ async fn output_filters_before_paging_backwards() {
     let fixture = Fixture::new().await;
     let (store, id) = (&fixture.store, fixture.id);
     store
-        .append_build_log(id, &vec![b'a'; 80_000], LogStream::Stdout)
+        .append_build_log(id, &vec![b'a'; 80_000], LogStream::Stdout, CAP)
         .await
         .expect("append build log succeeds");
     let newest = store
@@ -452,11 +461,11 @@ async fn output_filters_before_paging_backwards() {
 
     let id = fixture.start().await;
     store
-        .append_build_log(id, b"error output", LogStream::Stderr)
+        .append_build_log(id, b"error output", LogStream::Stderr, CAP)
         .await
         .expect("append build log succeeds");
     store
-        .append_build_log(id, &vec![b'x'; 68_000], LogStream::Stdout)
+        .append_build_log(id, &vec![b'x'; 68_000], LogStream::Stdout, CAP)
         .await
         .expect("append build log succeeds");
     let errors = store
@@ -474,12 +483,12 @@ async fn structured_chunks_preserve_multibyte_output() {
         let id = fixture.start().await;
         let text = "€".repeat(repeats);
         store
-            .append_build_log(id, text.as_bytes(), LogStream::Stdout)
+            .append_build_log(id, text.as_bytes(), LogStream::Stdout, CAP)
             .await
             .expect("append build log succeeds");
         if truncated {
             store
-                .append_build_log(id, b"x", LogStream::Stdout)
+                .append_build_log(id, b"x", LogStream::Stdout, CAP)
                 .await
                 .expect("append build log succeeds");
         }

@@ -19,9 +19,10 @@ Retries use the captured deployment, not subsequent configuration edits.
 
 The piqueld logo links to the home page. The sidebar groups Overview,
 Applications, and Builds; the Observe section (Events, Errors, Analytics,
-Notifications); and the System section (Daemon status, Host settings, Accounts,
-Audit). Notifications, Daemon status and Host settings need `system:read`;
-retrying a failed notification delivery needs `system:operate`.
+Notifications); and the System section (Daemon status, Settings, Accounts,
+Audit). Notifications, Daemon status and Settings need `system:read`;
+retrying a failed notification delivery needs `system:operate`, and changing
+a [daemon setting](operations/settings.md) `settings:manage`.
 Notifications lists [destinations](operations/notifications.md) and
 deliveries. With `notifications:manage` it adds, edits, tests and deletes
 destinations: their kind, URL (write-only), categories with an optional message
@@ -93,7 +94,7 @@ or gone, with shortened commits; local while it runs a local snapshot, with
 the branch head or "never pushed"; or unknown with the repository error), and
 status (or **Deleting**) with its status message on hover. A **Bounded**
 badge marks a preview whose deployment runs a service with the
-[`[previews]`](reference/configuration.md#previews) default limits or fewer replicas than
+[`previews`](reference/configuration.md#previews) default limits or fewer replicas than
 its manifest asks for, listed on hover. It also shows whether pushes
 redeploy it, with the commit sync last deployed or found.
 The list loads when the tab opens and on **Refresh**, not on a timer, since
@@ -317,8 +318,8 @@ Concurrent edits are rejected using configuration revisions; failed saves retain
 local form values. **Reload saved configuration**, offered after a failure or a
 change made elsewhere, reloads it in place: forms without edits show the latest
 version, and edited ones keep their edits until saved or discarded, discarding
-back to the latest version. Navigation warns about unsaved edits. Host settings are
-read-only. There is no raw manifest editor.
+back to the latest version. Navigation warns about unsaved edits. The host's
+settings are read-only. There is no raw manifest editor.
 
 The browser bundle uses HTTP DTOs and shared typed lifecycle records and
 fetches same-origin `/api/v1` resources. The daemon serves it only on the

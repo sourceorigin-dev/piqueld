@@ -157,8 +157,9 @@ async fn the_tunnel_listener_serves_only_public_routes_to_edge_peers() {
         .iter()
         .find_map(|route| {
             route["handle"]
-                .get(0)
-                .filter(|handle| handle["handler"] == "reverse_proxy")
+                .as_array()?
+                .iter()
+                .find(|handle| handle["handler"] == "reverse_proxy")
         })
         .expect("the match exists");
     assert_eq!(
@@ -175,8 +176,9 @@ async fn the_tunnel_listener_serves_only_public_routes_to_edge_peers() {
         .iter()
         .find_map(|route| {
             route["handle"]
-                .get(0)
-                .filter(|handle| handle["handler"] == "reverse_proxy")
+                .as_array()?
+                .iter()
+                .find(|handle| handle["handler"] == "reverse_proxy")
         })
         .expect("the match exists");
     assert!(private.get("headers").is_none());

@@ -144,20 +144,9 @@ impl ControllerHarness {
         }
     }
 
-    /// Reopens the store with `config`'s history retention, as the daemon
-    /// opens it.
-    async fn retain(&mut self, config: &piqueld_config::DaemonConfig) {
-        self.store = Arc::new(
-            Store::open_unsynced(&self.database_path)
-                .await
-                .expect("the store opens")
-                .with_observability(
-                    &config.retention,
-                    &config.images,
-                    Duration::from_secs(config.reconciliation.scan_interval_seconds),
-                ),
-        );
-        self.controller = self.new_controller();
+    /// Changes the daemon settings `change` changes, as the API would.
+    fn retain(&self, change: impl FnOnce(&mut piqueld_core::settings::Settings)) {
+        self.store.assume_settings(change);
     }
 
     /// A controller over this harness's Docker, store and sources.
@@ -205,7 +194,7 @@ impl ControllerHarness {
     /// Gives the controller `timeout` to wait for each convergence.
     fn set_convergence_timeout(&mut self, timeout: Duration) {
         self.set_retry_policy(piqueld::reconcile::RetryPolicy {
-            convergence_timeout: timeout,
+            convergence_timeout: Some(timeout),
             ..piqueld::reconcile::RetryPolicy::default()
         });
     }

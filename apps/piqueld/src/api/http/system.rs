@@ -11,7 +11,8 @@ use piqueld_core::ApiErrorCode;
 use piqueld_core::access::{AppPermission, GlobalPermission};
 use piqueld_core::api::{BuilderCheck, DnsStatus, Envelope, SystemStatus};
 
-use super::{ApiError, ApiState, ok, openapi::ApiErrors};
+use super::access::Audited;
+use super::{ApiError, ApiJson, ApiPath, ApiState, ok, openapi::ApiErrors};
 
 /// Gets daemon status.
 ///
@@ -119,16 +120,61 @@ pub(super) async fn health() -> impl IntoResponse {
     (StatusCode::OK, axum::Json(HealthResponse { status: "ok" }))
 }
 
-/// Gets the effective read-only host configuration.
+/// Gets the daemon's settings.
 ///
+/// Lists the host's settings, which only the configuration file changes, and
+/// every daemon setting with its effective value and where it comes from.
 /// Returns 503 when the daemon has no effective configuration to report.
 #[utoipa::path(get,path="/api/v1/system/configuration",operation_id="systemConfiguration",
-    responses((status=200,description="Effective read-only host settings",body=Envelope<piqueld_core::api::HostConfiguration>),
+    responses((status=200,description="Effective settings",body=Envelope<piqueld_core::api::HostConfiguration>),
     ApiErrors<503>))]
 pub(super) async fn configuration(
     State(state): State<ApiState>,
 ) -> Result<impl IntoResponse, ApiError> {
-    Ok(ok(state.host_configuration()?.clone()))
+    Ok(ok(state.host_configuration()?))
+}
+
+/// Changes a daemon setting.
+///
+/// The value applies at once, without a restart, and the change is recorded
+/// in the audit trail. Fails with 404 `setting_unknown`, 409
+/// `setting_unavailable` for a setting the installation lacks what it needs
+/// for, or 422 `setting_invalid` for a value the setting doesn't take.
+#[utoipa::path(put,path="/api/v1/system/settings/{key}",operation_id="putSetting",
+    params(("key"=String,Path,description="The setting's key, such as `retention.event_days`")),
+    request_body=piqueld_core::api::SettingChange,
+    responses((status=200,description="The setting, changed",body=Envelope<piqueld_core::api::Setting>),
+    ApiErrors<400, 404, 409, 415, 422, 503>))]
+pub(super) async fn put_setting(
+    State(state): State<ApiState>,
+    Extension(identity): Extension<Identity>,
+    audited: Audited,
+    ApiPath(key): ApiPath<String>,
+    ApiJson(change): ApiJson<piqueld_core::api::SettingChange>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(ok(state
+        .set_setting(audited.author(&identity), &key, Some(change.value))
+        .await?))
+}
+
+/// Resets a daemon setting to its default.
+///
+/// The default applies at once, and the reset is recorded in the audit
+/// trail, even while the installation lacks what the setting needs. Fails
+/// with 404 `setting_unknown`.
+#[utoipa::path(delete,path="/api/v1/system/settings/{key}",operation_id="resetSetting",
+    params(("key"=String,Path,description="The setting's key, such as `retention.event_days`")),
+    responses((status=200,description="The setting, reset",body=Envelope<piqueld_core::api::Setting>),
+    ApiErrors<400, 404, 503>))]
+pub(super) async fn reset_setting(
+    State(state): State<ApiState>,
+    Extension(identity): Extension<Identity>,
+    audited: Audited,
+    ApiPath(key): ApiPath<String>,
+) -> Result<impl IntoResponse, ApiError> {
+    Ok(ok(state
+        .set_setting(audited.author(&identity), &key, None)
+        .await?))
 }
 
 /// Checks whether deployment dependencies are ready.

@@ -139,7 +139,7 @@ A rollout fails when Docker pauses it because a new container exited, or
 failed its [health check](services.md#health-checks), soon after it started.
 It also fails when a service the rollout waits for doesn't become ready in
 time, such as when its new containers can't be scheduled. The daemon's
-[`reconciliation.convergence_timeout_seconds`](../reference/configuration-settings.md#reconciliationconvergence_timeout_seconds)
+[`reconciliation.convergence_timeout_seconds`](../reference/daemon-settings.md#reconciliationconvergence_timeout_seconds)
 sets how long it waits, 2 minutes by default. Each environment chooses what
 happens then:
 
@@ -246,10 +246,10 @@ It runs the release of the deployment it restored.
   deployment's images, and can't pull it again from a registry. The error
   names the service and image. piqueld keeps the images of each environment's
   last three successful deployments, and of a preview's current one:
-  [`images.keep_deployments`](../reference/configuration-settings.md#imageskeep_deployments),
+  [`images.keep_deployments`](../reference/daemon-settings.md#imageskeep_deployments),
   in the daemon's configuration, changes that number. With a build machine,
   the build registry keeps the images of each environment's last
-  [`images.registry_keep_deployments`](../reference/configuration-settings.md#imagesregistry_keep_deployments)
+  [`images.registry_keep_deployments`](../reference/daemon-settings.md#imagesregistry_keep_deployments)
   successful deployments, 10 by default, which piqueld pulls again. An image
   piqueld built is never built again for a restore.
 - **Restoring fails with `restore_secrets_unavailable`.** A secret version

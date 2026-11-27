@@ -1,7 +1,7 @@
 //! Where images build, this host's Docker Engine or a build machine, and
 //! how many build at once.
 use super::schema_from_raw;
-use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild, WhenUnavailable};
+use piqueld_core::build_machine::{BuildRepository, BuilderEndpoint, RemoteBuild};
 use serde::Deserialize;
 use std::num::NonZeroU8;
 
@@ -14,7 +14,6 @@ use std::num::NonZeroU8;
 /// parallel = 2
 /// builder = "tcp://build.example.ts.net:1234"
 /// repository = "registry.example.ts.net:5000/piqueld"
-/// unavailable = "fail" # or "local"
 /// ```
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(try_from = "RawBuildConfig")]
@@ -73,26 +72,16 @@ struct RawBuildConfig {
     /// naming this installation, by which image cleanup finds it.
     #[schema(value_type = Option<String>)]
     repository: Option<BuildRepository>,
-    /// What a deployment that has to build does while the build machine
-    /// can't be reached: `fail`, the default, fails it with
-    /// `builder_unavailable`, and `local` builds on this host's Docker Engine
-    /// instead, where a build competes with the applications the host runs.
-    /// Requires `builder`.
-    unavailable: Option<WhenUnavailable>,
 }
 
 impl TryFrom<RawBuildConfig> for BuildConfig {
     type Error = &'static str;
     fn try_from(raw: RawBuildConfig) -> Result<Self, Self::Error> {
         let remote = match (raw.builder, raw.repository) {
-            (None, None) if raw.unavailable.is_some() => {
-                return Err("build.unavailable requires build.builder");
-            }
             (None, None) => None,
             (Some(builder), Some(repository)) => Some(RemoteBuild {
                 builder,
                 repository,
-                unavailable: raw.unavailable.unwrap_or_default(),
             }),
             (Some(_), None) => return Err("build.builder requires build.repository"),
             (None, Some(_)) => return Err("build.repository requires build.builder"),

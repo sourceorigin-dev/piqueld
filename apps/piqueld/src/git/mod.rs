@@ -23,8 +23,6 @@ pub struct Sources {
     checkouts: Arc<Checkouts>,
     /// Snapshots uploaded from local worktrees, kept in `snapshots/`.
     snapshots: snapshot::Snapshots,
-    /// Largest snapshot bundle an upload may carry (`[snapshots]`).
-    max_upload_bytes: std::num::NonZeroU64,
 }
 
 impl Sources {
@@ -44,17 +42,15 @@ impl Sources {
         Ok(Self {
             checkouts: Arc::new(Checkouts::open(directory.join(Self::CHECKOUTS)).await?),
             snapshots: snapshot::Snapshots::open(directory.join(Self::SNAPSHOTS)).await?,
-            max_upload_bytes: piqueld_config::SnapshotsConfig::default().max_upload_bytes,
         })
     }
 
-    /// Applies the daemon's `[checkouts] max_bytes` and `[snapshots]
-    /// max_upload_bytes`, before any checkout is made.
+    /// Applies the daemon's `[checkouts] max_bytes`, before any checkout is
+    /// made.
     #[must_use]
     pub fn configured(self, config: &piqueld_config::DaemonConfig) -> Self {
         Self {
             checkouts: Arc::new(self.checkouts.with_max_bytes(config.checkouts.max_bytes)),
-            max_upload_bytes: config.snapshots.max_upload_bytes,
             ..self
         }
     }
@@ -67,11 +63,6 @@ impl Sources {
     /// Snapshots uploaded from local worktrees.
     pub(crate) const fn snapshots(&self) -> &snapshot::Snapshots {
         &self.snapshots
-    }
-
-    /// The largest local snapshot bundle an upload may carry, in bytes.
-    pub(crate) const fn max_upload_bytes(&self) -> u64 {
-        self.max_upload_bytes.get()
     }
 
     /// Removes the snapshots no preview's latest deployment uses, finding
@@ -643,13 +634,18 @@ pub(crate) struct Checkout {
 }
 
 impl Checkout {
-    /// Builds the checkout's image, labelled for `owner` and queued with
-    /// `priority`, streaming Docker's output into `log` when supplied.
+    /// Builds the checkout's image, labelled for `owner`, queued with
+    /// `priority`, and following `unavailable` while the build machine can't
+    /// be reached, streaming Docker's output into `log` when supplied.
     /// Returns the built image.
     pub(crate) async fn build(
         &self,
         build: &piqueld_core::manifest::ValidatedBuild,
-        (owner, priority): (&piqueld_core::InstanceId, piqueld_docker::BuildPriority),
+        (owner, priority, unavailable): (
+            &piqueld_core::InstanceId,
+            piqueld_docker::BuildPriority,
+            piqueld_core::build_machine::WhenUnavailable,
+        ),
         docker: &impl piqueld_docker::DockerApi,
         log: Option<&dyn piqueld_docker::command::OutputLog>,
     ) -> anyhow::Result<piqueld_core::BuiltImage> {
@@ -666,6 +662,7 @@ impl Checkout {
             args,
             target: target.as_deref(),
             priority,
+            unavailable,
         };
         docker
             .build_image(&build, log)

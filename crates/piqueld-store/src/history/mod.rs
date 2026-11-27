@@ -1,7 +1,6 @@
 //! Bounded deployment history. Every deploy, promotion, restore and refresh
 //! records a deployment, so without a bound history grows forever.
 use super::{Store, StoreError, days_ago_ms, now_ms};
-use piqueld_core::{ImagesConfig, RetentionConfig};
 
 /// Deployments pruned per transaction, so pruning never holds the writer long.
 const PRUNE_BATCH: usize = 1_000;
@@ -13,30 +12,6 @@ const PREVIEW_MIN_AGE_MS: i64 = 3_600_000;
 /// it keeps every one a deployment references too. Not by ID alone, which
 /// follows creation time only within one daemon run.
 const KEPT_RELEASES: i64 = 50;
-
-/// How much deployment history each environment keeps; see
-/// [`Store::prune_deployment_history`].
-#[derive(Clone, Copy, Debug, Default)]
-pub(super) struct DeploymentRetention {
-    /// `retention.deployment_days`; zero keeps every deployment.
-    days: u64,
-    /// `retention.deployments_per_environment`; zero keeps every deployment.
-    per_environment: u32,
-    /// `images.keep_deployments`: the newest successful deployments, whose
-    /// images are kept so they can be restored.
-    succeeded: u32,
-}
-
-impl DeploymentRetention {
-    /// Combines the retention settings for deployments and their images.
-    pub(super) fn new(retention: &RetentionConfig, images: &ImagesConfig) -> Self {
-        Self {
-            days: retention.deployment_days,
-            per_environment: retention.deployments_per_environment,
-            succeeded: images.keep_deployments,
-        }
-    }
-}
 
 impl Store {
     /// Prunes each environment's finished deployments older than
@@ -50,13 +25,14 @@ impl Store {
     /// # Errors
     /// Returns storage or encoding errors.
     pub async fn prune_deployment_history(&self) -> Result<(), StoreError> {
-        let retention = self.deployment_retention;
-        if retention.days == 0 || retention.per_environment == 0 {
+        let settings = self.settings();
+        let retention = settings.retention;
+        if retention.deployment_days == 0 || retention.deployments_per_environment == 0 {
             return Ok(());
         }
         let (succeeded, cutoff, preview_cutoff) = (
-            retention.succeeded.max(1),
-            days_ago_ms(retention.days),
+            settings.images.keep_deployments.max(1),
+            days_ago_ms(retention.deployment_days),
             now_ms().saturating_sub(PREVIEW_MIN_AGE_MS),
         );
         let candidates = sqlx::query_scalar!(
@@ -74,7 +50,7 @@ impl Store {
                 AND CASE WHEN r.kind='preview' THEN r.finished_at_ms<?4 ELSE r.rank>?2 AND r.finished_at_ms<?3 END
                 AND r.id NOT IN (SELECT id FROM current)"#,
             succeeded,
-            retention.per_environment,
+            retention.deployments_per_environment,
             cutoff,
             preview_cutoff
         )

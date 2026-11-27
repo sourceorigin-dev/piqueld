@@ -2,7 +2,7 @@
 //! Their lifecycle never needs or advances the application revision, since
 //! they select no `[spec.environments.<name>]` block; creation is idempotent
 //! through the `preview_key` unique index instead, and bounded by the
-//! `[previews]` counts checked in the creating transaction.
+//! `previews` counts checked in the creating transaction.
 use super::{
     ApplicationState, Operation, ResolvedApplication, Store, StoreError, StoredApplication,
     StoredEnvironment, now_ms,
@@ -20,17 +20,10 @@ use piqueld_core::{
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
 impl Store {
-    /// Applies the daemon's `[previews]` limits.
+    /// The `previews` limits that preview creation and rendering apply now.
     #[must_use]
-    pub fn with_previews(mut self, limits: PreviewLimits) -> Self {
-        self.previews = limits;
-        self
-    }
-
-    /// The `[previews]` limits that preview creation and rendering apply.
-    #[must_use]
-    pub const fn preview_limits(&self) -> &PreviewLimits {
-        &self.previews
+    pub fn preview_limits(&self) -> PreviewLimits {
+        self.settings().previews
     }
 
     /// The commits of the local snapshots previews' latest deployments use.
@@ -330,7 +323,7 @@ impl Store {
         .map_err(StoreError::database)
     }
 
-    /// How `[previews]` bounded a preview's current target: the default
+    /// How `previews` bounded a preview's current target: the default
     /// limit and replica cap warnings of the deployment it promoted last.
     ///
     /// # Errors
@@ -364,7 +357,7 @@ impl Store {
             .collect())
     }
 
-    /// Previews against the `[previews]` limits: the installation's count
+    /// Previews against the `previews` limits: the installation's count
     /// and the CPU and memory limits of their deployed replicas, and the
     /// count of each `readable` application with previews. Previews being
     /// deleted count until they are gone, as when creating one. Replicas
@@ -380,7 +373,7 @@ impl Store {
         .await
         .map_err(StoreError::database)?;
         let mut usage = PreviewUsage {
-            limits: self.previews.clone(),
+            limits: self.preview_limits(),
             ..PreviewUsage::default()
         };
         for row in rows {

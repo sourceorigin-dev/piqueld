@@ -144,10 +144,11 @@ record than the one you kept, records were removed.
 
 ## How long it's kept
 
-[`retention.audit_days`](../reference/configuration-settings.md#retentionaudit_days) keeps records for 365 days by default; `0` keeps them
-forever. Pruning only removes old records while the chain through them is
-intact, so it never erases evidence of tampering. `Pruned through` then names
-the last record removed, which the remaining chain starts from.
+[`retention.audit_days`](../reference/daemon-settings.md#retentionaudit_days)
+keeps records for 365 days by default; `0` keeps them forever. Pruning only
+removes old records while the chain through them is intact, so it never erases
+evidence of tampering. `Pruned through` then names the last record removed,
+which the remaining chain starts from.
 
 ## Get alerted
 

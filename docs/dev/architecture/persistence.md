@@ -42,6 +42,52 @@ environment context after deletion. Application events use
 (both default to 90 days; zero disables pruning). Other finished operations use
 `retention.finished_operation_days`.
 
+## Daemon settings
+
+Daemon settings are the installation's policy, which change while the daemon
+runs: retention, preview limits, reconciliation timing and the like. The
+configuration file keeps what the daemon needs before its database opens and
+facts about its host, such as listeners, credentials, DNS providers, ingress,
+build machines and the disk Git checkouts may take.
+
+`piqueld_core::settings` declares every daemon setting once, in its
+`settings!` macro, with its section, label, type, default, range, what it
+needs of the installation (a `Requirement`, such as a build machine) and doc
+comment. A type implementing `SettingType` says which values it takes: whole
+numbers, switches or choices. The macro generates:
+
+- the section types the daemon reads, such as `RetentionConfig`, gathered in
+  `Settings`, whose schema the
+  [daemon settings reference](../../user/reference/daemon-settings.md) is
+  generated from;
+- `SETTINGS`, one `SettingSpec` per setting, through which the API checks,
+  applies and reports a value by key.
+
+`SettingLayers` resolves the effective settings: the value set through the
+API, else the default. The store keeps the values set through the API in
+`daemon_settings`, one JSON value per key, and the layers and effective
+settings in a watch channel. `Store::set_setting` checks `settings:manage`,
+the requirement and the range,
+writes or deletes the row and its audit record in one transaction, then
+updates the channel while it still holds the writer, so changes apply in the
+order they commit. A stored value this version doesn't take is ignored.
+
+The daemon records the requirements the installation meets
+(`Store::meet_requirements`); the API refuses to change a setting whose
+requirement it lacks.
+
+Readers call `Store::settings` where they apply a setting, rather than once at
+startup, so a change applies without a restart. Work scheduled by a setting,
+such as the reconciliation scan and image cleanup, recomputes its next run
+from the current value, and so does the ingress gateway's pass, which
+applies `ingress.traffic`. A build takes `build.unavailable` as it is
+requested (`ImageBuild::unavailable`), and keeps the output cap it started
+with. Tests
+that need sub-second timeouts fix them on the controller instead.
+
+To add a setting, declare it in `settings!`, read it from `Store::settings`
+where it applies, and run `just generate`.
+
 ## Migrations
 
 Startup reads `PRAGMA user_version`, rejects an unsupported newer schema, and

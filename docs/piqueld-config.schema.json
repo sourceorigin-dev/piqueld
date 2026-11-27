@@ -24,18 +24,8 @@
     },
     "AuthConfig": {
       "additionalProperties": false,
-      "description": "The website's origin and API token lifetimes.",
+      "description": "The website's origin.",
       "properties": {
-        "max_token_days": {
-          "default": null,
-          "description": "The longest lifetime, in days, of new API tokens. When unset, tokens\nmay have any lifetime, including none. Existing tokens keep theirs.",
-          "format": "int32",
-          "minimum": 1,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
         "public_url": {
           "default": null,
           "description": "The website's canonical origin, such as `https://piqueld.example.com`.\nPasskeys only work on this origin, and API mutations and WebSocket\nupgrades that send an `Origin` header must match it. It must be HTTPS,\nexcept `http://localhost` or a subdomain of it, such as\n`http://dev.localhost`, for development. When unset, it is\n`https://` followed by `ingress.private.dashboard_hostname` if that is\nset, otherwise the tailnet node's HTTPS URL if `tailscale.enabled` is\nset, otherwise `http://localhost:7845`.",
@@ -77,41 +67,6 @@
             "string",
             "null"
           ]
-        },
-        "unavailable": {
-          "default": null,
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/definitions/WhenUnavailable",
-              "description": "What a deployment that has to build does while the build machine\ncan't be reached: `fail`, the default, fails it with\n`builder_unavailable`, and `local` builds on this host's Docker Engine\ninstead, where a build competes with the applications the host runs.\nRequires `builder`."
-            }
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "BuildHistoryConfig": {
-      "additionalProperties": false,
-      "description": "How much output of each build is kept, and for how long. Builds\nthemselves are listed until deployment history pruning removes their\noperation.",
-      "properties": {
-        "log_max_bytes": {
-          "default": 4194304,
-          "description": "The most output kept per build, in bytes. Output within it is kept\nwhole. Of longer output, a build keeps the first half and the end,\nwith a note of how many bytes it left out between them when the note\nfits.",
-          "format": "int32",
-          "maximum": 67108864,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "log_retention_days": {
-          "default": 30,
-          "description": "Days a build's output is kept after it finishes. The build stays\nlisted, marked as expired.",
-          "format": "int32",
-          "maximum": 3650,
-          "minimum": 1,
-          "type": "integer"
         }
       },
       "type": "object"
@@ -253,35 +208,6 @@
       "description": "A fully qualified public DNS name, such as `app.example.com`, in\nlowercase ASCII, without a scheme, port, path or wildcard. Write\nUnicode domains in their IDNA (Punycode) form.",
       "type": "string"
     },
-    "ImagesConfig": {
-      "additionalProperties": false,
-      "description": "Cleanup of the images this installation builds. Cleanup keeps what every\nenvironment and preview runs or is deploying, and removes the rest. It\nnever removes pulled images, images built by hand, or images other\ninstallations built on the same Docker Engine. With a build machine, it\nalso deletes from the build registry the images this host's builds pushed\nthat no deployment it keeps there uses.",
-      "properties": {
-        "cleanup_interval_seconds": {
-          "default": 3600,
-          "description": "Seconds between cleanups. Cleanup also runs after each operation.",
-          "format": "int64",
-          "maximum": 86400,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "keep_deployments": {
-          "default": 3,
-          "description": "How many of each environment's latest successful deployments also\nkeep their images, so their releases can be deployed again.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "registry_keep_deployments": {
-          "default": 10,
-          "description": "How many of each environment's latest successful deployments keep\ntheir images in the build registry, `build.repository`, and never\nfewer than `keep_deployments`. Cleanup deletes the other images this\nhost's builds pushed there, and skips the registry while it can't be\nreached. Without a build machine, it does nothing.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
     "IngressConfig": {
       "additionalProperties": false,
       "description": "The managed Caddy gateway that serves applications' routes.",
@@ -306,11 +232,6 @@
             "type": "string"
           },
           "type": "array"
-        },
-        "traffic": {
-          "default": true,
-          "description": "Count the requests each route serves, for each environment's\ntraffic page, while `ingress.enabled` is set. piqueld stores hourly\ntotals, not the requests themselves or visitors' addresses. While the\ndaemon isn't connected to the gateway, such as while it restarts, the\ngateway writes its requests, visitors' addresses and paths included, to\nits own Docker log, which keeps up to 30 MB.",
-          "type": "boolean"
         },
         "tunnel": {
           "$ref": "#/definitions/TunnelConfig",
@@ -377,51 +298,6 @@
       ],
       "type": "string"
     },
-    "PreviewLimits": {
-      "additionalProperties": false,
-      "description": "How many previews may exist, and what each preview service may use.\n\nCounts are checked when a preview is created, so lowering one below the\ncurrent count keeps every existing preview running and only refuses new\nones. Resource bounds apply when a preview's manifest is rendered, so a\npreview picks up changed bounds on its next deployment. Environments are\nnever bounded.",
-      "properties": {
-        "default_cpu_millis": {
-          "default": 500,
-          "description": "CPU limit, in millicores, of preview services that set none.",
-          "format": "int32",
-          "maximum": 1048576,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "default_memory_bytes": {
-          "default": 536870912,
-          "description": "Memory limit, in bytes, of preview services that set none.",
-          "format": "int64",
-          "maximum": 9223372036854775807,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "max_per_application": {
-          "default": 10,
-          "description": "Previews one application may have; creating more fails with\n`preview_limit_reached`. `0` refuses every new preview.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "max_replicas": {
-          "default": 1,
-          "description": "Most replicas a preview service runs; manifests asking for more are\ncapped with a warning.",
-          "format": "int32",
-          "maximum": 100,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "max_total": {
-          "default": 30,
-          "description": "Previews the whole installation may have; creating more fails with\n`preview_limit_reached`. `0` refuses every new preview.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
     "PrivateIngressConfig": {
       "additionalProperties": false,
       "description": "The apps tailnet node: a second tailnet node, a Tailscale container\nbeside the gateway, that carries private routes' traffic to the\ngateway's private listener. It is separate from the daemon's own node\n(`[tailscale]`), so it can have its own ACLs and tags.",
@@ -459,93 +335,6 @@
           "default": "piqueld-apps",
           "description": "The apps node's name, a single DNS label, which becomes\n`<hostname>.<tailnet>.ts.net`. It must differ from\n`tailscale.hostname` while both are enabled.",
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "ReconciliationConfig": {
-      "additionalProperties": false,
-      "description": "How often piqueld checks that Docker matches what is deployed, and how\nlong a deployment may take.",
-      "properties": {
-        "convergence_timeout_seconds": {
-          "default": 120,
-          "description": "Seconds a deployment may wait without any service converging. It\nrestarts each time a service converges, so each link of a startup\ndependency chain gets the full timeout.",
-          "format": "int64",
-          "maximum": 86400,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "prepare_timeout_seconds": {
-          "default": 300,
-          "description": "Seconds a deployment may take to prepare: fetching its manifest,\nresolving images and building them, including the time spent waiting\nfor a build slot.",
-          "format": "int64",
-          "maximum": 86400,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "scan_interval_seconds": {
-          "default": 60,
-          "description": "Seconds between full scans for drift between Docker and what is\ndeployed.",
-          "format": "int64",
-          "maximum": 86400,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
-    "RetentionConfig": {
-      "additionalProperties": false,
-      "description": "How long history is kept. `0` keeps it forever.",
-      "properties": {
-        "audit_days": {
-          "default": 365,
-          "description": "Days the audit trail of API requests is kept; `0` keeps it forever.",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "daemon_event_days": {
-          "default": 90,
-          "description": "Days events not tied to an application, such as those about shared\ninfrastructure, are kept; `0` keeps them forever.",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "deployment_days": {
-          "default": 90,
-          "description": "Days each environment's deployment history is kept; `0` keeps it\nforever. A deployment is removed only once it is older than this and\nbeyond the newest `deployments_per_environment`, and never while it is\ncurrent or latest, among the newest `images.keep_deployments`\nsuccessful ones (at least one), restored by a remaining deployment, or\nhas jobs to clean up. Of a preview's deployments that finished over an\nhour ago, only its newest successful one and those a remaining one\nrestored stay. Unused releases beyond each application's newest 50, and\nthe build and job records of removed deployments, go too. `0` here or\nin `deployments_per_environment` stops all pruning.",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "deployments_per_environment": {
-          "default": 50,
-          "description": "Deployments each environment keeps however old they are; `0` keeps\nevery deployment, release and build record, as for `deployment_days`.",
-          "format": "int32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "event_days": {
-          "default": 90,
-          "description": "Days application events are kept; `0` keeps them forever. Deleting an\napplication also removes its events.",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "finished_operation_days": {
-          "default": 10,
-          "description": "Days finished operations are kept; `0` keeps them forever. Older ones\nare removed during reconciliation, except each environment's latest\noperation and those in its deployment history or with job cleanup\npending.",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "traffic_days": {
-          "default": 90,
-          "description": "Days each environment's traffic counts are kept; `0` keeps them\nforever. Deleting an environment also removes its counts.",
-          "format": "int64",
-          "minimum": 0,
-          "type": "integer"
         }
       },
       "type": "object"
@@ -588,20 +377,6 @@
           "default": "/run/piqueld",
           "description": "The absolute path of the directory holding the Unix API socket,\n`piqueld.sock`. It must already exist, owned by the daemon's user and\nwith full access for it. Its group may read or traverse it, as with\nmode `0750`, `0740` or `0710`, only when it is the daemon's effective\ngroup; otherwise use `0700`. Group write and any access by others are\nrefused. Every directory above it must be owned by root or the\ndaemon's user and writable only by its owner, unless sticky, like\n`/tmp`. It must differ from `data_dir`.",
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "SnapshotsConfig": {
-      "additionalProperties": false,
-      "description": "Uploads of local worktrees by `piquelctl preview deploy --local`.",
-      "properties": {
-        "max_upload_bytes": {
-          "default": 268435456,
-          "description": "The largest Git bundle one upload may carry, in bytes. Larger uploads\nfail with `snapshot_too_large`.",
-          "format": "int64",
-          "minimum": 1,
-          "type": "integer"
         }
       },
       "type": "object"
@@ -706,29 +481,17 @@
         }
       },
       "type": "object"
-    },
-    "WhenUnavailable": {
-      "description": "What a build does while its build machine can't be reached.",
-      "enum": [
-        "fail",
-        "local"
-      ],
-      "type": "string"
     }
   },
-  "description": "The daemon's configuration file, `/etc/piqueld/config.toml` unless\n`piqueld --config` selects another. Every setting is optional unless it\nsays otherwise. The daemon reads the file once at startup, so restart it\nto apply a change.",
+  "description": "The daemon's configuration file, `/etc/piqueld/config.toml` unless\n`piqueld --config` selects another. Every setting is optional unless it\nsays otherwise. The daemon reads the file once at startup, so restart it\nto apply a change.\n\nDaemon settings, such as how long history is kept, aren't set here:\n`piquelctl settings`, the API and the dashboard change them while the\ndaemon runs.",
   "properties": {
     "auth": {
       "$ref": "#/definitions/AuthConfig",
-      "description": "The website's origin and API token lifetimes."
+      "description": "The website's origin."
     },
     "build": {
       "$ref": "#/definitions/BuildConfig",
       "description": "Where images build, and how many at once."
-    },
-    "build_history": {
-      "$ref": "#/definitions/BuildHistoryConfig",
-      "description": "How much build output is kept, and for how long."
     },
     "checkouts": {
       "$ref": "#/definitions/CheckoutsConfig",
@@ -742,33 +505,13 @@
       "$ref": "#/definitions/DockerConfig",
       "description": "The Docker Engine piqueld manages."
     },
-    "images": {
-      "$ref": "#/definitions/ImagesConfig",
-      "description": "Cleanup of the images this installation builds."
-    },
     "ingress": {
       "$ref": "#/definitions/IngressConfig",
       "description": "The managed HTTP gateway that serves applications' routes."
     },
-    "previews": {
-      "$ref": "#/definitions/PreviewLimits",
-      "description": "How many previews may exist, and the resources their services get."
-    },
-    "reconciliation": {
-      "$ref": "#/definitions/ReconciliationConfig",
-      "description": "How often piqueld checks for drift, and how long operations may take."
-    },
-    "retention": {
-      "$ref": "#/definitions/RetentionConfig",
-      "description": "How long finished operations, events and the audit trail are kept."
-    },
     "server": {
       "$ref": "#/definitions/ServerConfig",
       "description": "API listeners and state directories."
-    },
-    "snapshots": {
-      "$ref": "#/definitions/SnapshotsConfig",
-      "description": "Uploads of local worktrees by `piquelctl preview deploy --local`."
     },
     "tailscale": {
       "$ref": "#/definitions/TailscaleConfig",

@@ -22,7 +22,7 @@ impl<D: DockerApi> Controller<D> {
     /// and mounted files are never re-read. Otherwise the repository is cloned
     /// and its manifest (at most 2 MiB) validated, kept to the application
     /// name, rendered for `environment` at the fetched commit, bounded by
-    /// `[previews]` for a preview, and persisted. The manifest's own
+    /// `previews` for a preview, and persisted. The manifest's own
     /// `spec.manifest` is replaced by the repository's, with a
     /// `manifest_connection_ignored` warning when they differ.
     pub(super) async fn deployment_manifest(
@@ -87,7 +87,7 @@ impl<D: DockerApi> Controller<D> {
             environment
                 .environment()
                 .kind
-                .bound(&mut rendering.application, self.store.preview_limits())
+                .bound(&mut rendering.application, &self.store.preview_limits())
                 .into_iter()
                 .map(DiagnosticView::from),
         );

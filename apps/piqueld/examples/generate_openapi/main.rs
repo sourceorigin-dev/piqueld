@@ -92,6 +92,10 @@ impl Generator {
         let config_schema = DaemonConfig::json_schema();
         let config_settings = SettingsPage::CONFIG.render(&config_schema)?;
         let config_schema = format!("{}\n", serde_json::to_string_pretty(&config_schema)?);
+        let daemon_settings =
+            SettingsPage::DAEMON.render(&piqueld_core::json_schema::standalone::<
+                piqueld_core::settings::Settings,
+            >("piqueld daemon settings"))?;
 
         let report = self.artifacts.sync([
             ("docs/openapi-v1.json", document),
@@ -104,6 +108,7 @@ impl Generator {
             ),
             (SettingsPage::MANIFEST.path, manifest_settings),
             (SettingsPage::CONFIG.path, config_settings),
+            (SettingsPage::DAEMON.path, daemon_settings),
         ])?;
         println!("{report}");
         Ok(())

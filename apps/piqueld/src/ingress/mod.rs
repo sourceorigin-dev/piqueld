@@ -153,9 +153,6 @@ pub struct Ingress {
     /// Public hostname whose webhook path the gateway forwards to the
     /// daemon's webhook socket, `ingress.webhook_hostname`.
     webhooks: Option<Hostname>,
-    /// Whether the gateway logs each routed request to the daemon, which
-    /// counts it, `ingress.traffic`.
-    traffic: bool,
     #[cfg(test)]
     issuer: Option<serde_json::Value>,
     #[cfg(test)]
@@ -225,7 +222,6 @@ impl Ingress {
             withdrawing: parking_lot::Mutex::default(),
             gateway_converged: std::sync::atomic::AtomicBool::new(false),
             webhooks: None,
-            traffic: false,
             #[cfg(test)]
             issuer: None,
             #[cfg(test)]
@@ -251,8 +247,7 @@ impl Ingress {
         .with_private(&config.ingress.private)
         .with_tunnel(&config.ingress.tunnel)
         .with_public_addresses(&config.ingress.public_addresses)
-        .with_webhooks(config.ingress.webhook_hostname.clone())
-        .with_traffic(config.ingress.traffic))
+        .with_webhooks(config.ingress.webhook_hostname.clone()))
     }
 
     /// Stops the running ingress containers of `instance`, on the engine at
@@ -284,27 +279,23 @@ impl Ingress {
         Ok(running.len())
     }
 
-    /// Counts the requests each route serves when `traffic` is set.
-    #[must_use]
-    pub fn with_traffic(mut self, traffic: bool) -> Self {
-        self.traffic = traffic;
-        self
-    }
-
     /// Whether the gateway logs each routed request for the daemon to count:
-    /// `ingress.traffic`, while ingress is enabled.
+    /// the `ingress.traffic` setting in effect now, while ingress is
+    /// enabled. The next gateway pass applies a change.
     #[must_use]
     pub fn counts_traffic(&self) -> bool {
-        self.traffic && self.enabled
+        self.enabled && self.store.settings().ingress.traffic
     }
 
-    /// Binds the socket the gateway writes its access log to, while it
-    /// [counts traffic](Self::counts_traffic), and returns its reader.
+    /// Binds the socket the gateway writes its access log to while it
+    /// [counts traffic](Self::counts_traffic), whenever ingress is enabled,
+    /// since the `ingress.traffic` setting can turn counting on at any time,
+    /// and returns its reader.
     ///
     /// # Errors
     /// Returns directory preparation or binding errors.
     pub async fn bind_traffic(&self) -> Result<Option<Traffic>> {
-        if !self.counts_traffic() {
+        if !self.enabled {
             return Ok(None);
         }
         let listener = Self::bind_control(&self.directory, traffic::TRAFFIC_SOCKET)
@@ -549,11 +540,26 @@ impl Ingress {
         }
     }
 
-    /// Every 10s, reconciles the gateway (see [`Self::refresh`]) and relays
-    /// Caddy logs. Failures are logged and retried on the next tick.
+    /// Every 10s, and as soon as the `ingress.traffic` setting changes,
+    /// reconciles the gateway (see [`Self::refresh`]) and relays Caddy logs.
+    /// Failures are logged and retried on the next tick.
     async fn run_gateway(&self, cancellation: &CancellationToken) {
         let mut ticks = Ticker::new(GATEWAY_PERIOD);
-        while ticks.tick(cancellation).await {
+        let mut settings = self.store.settings_changes();
+        let mut traffic = settings.borrow_and_update().effective().ingress.traffic;
+        loop {
+            tokio::select! {
+                ticked = ticks.tick(cancellation) => if !ticked {
+                    return;
+                },
+                Ok(()) = settings.changed() => {
+                    let changed = settings.borrow_and_update().effective().ingress.traffic;
+                    if changed == traffic {
+                        continue;
+                    }
+                    traffic = changed;
+                }
+            }
             let pass = async {
                 if let Err(error) = self.refresh().await {
                     tracing::warn!(?error, "ingress reconciliation failed; will retry");

@@ -266,8 +266,19 @@ deployments that [reuse an image](git-builds.md#how-it-builds), such as one
 that only changes a secret.
 
 A deployment that has to build fails with `builder_unavailable`. Deploy it
-again once the build machine is back, or set `build.unavailable = "local"` to
-build on the host instead, where builds compete with your applications.
+again once the build machine is back, or build on the host instead, where
+builds compete with your applications: set **While the build machine is
+unreachable** to `local` on the dashboard's **Settings** page, or run on your
+machine:
+
+```console
+piquelctl settings set build.unavailable local
+```
+
+It applies to the next build, without a restart; set it back to `fail` once
+the build machine is back. `build.unavailable` is a
+[daemon setting](../operations/settings.md), which the configuration file
+doesn't set.
 
 A restore whose image the host no longer has pulls it from the build registry,
 so it needs the registry to be reachable, wherever it runs.

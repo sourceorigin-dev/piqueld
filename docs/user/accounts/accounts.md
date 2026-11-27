@@ -209,8 +209,8 @@ the account if someone gets hold of a signed-in browser or CLI login:
 
 - adding a passkey;
 - creating an API token, an invitation or an enrollment link;
-- giving an account `admin`, `accounts:manage` or `system:operate`, which it
-  didn't hold (removing access never asks);
+- giving an account `admin`, `accounts:manage`, `system:operate` or
+  `settings:manage`, which it didn't hold (removing access never asks);
 - approving a [CLI login](cli-and-tokens.md#sign-piquelctl-in);
 - [recovering a lost secret key](recovery.md#a-lost-secret-key).
 

@@ -18,15 +18,15 @@ pub use build::BuildConfig;
 use credential::Resolution;
 pub use credential::{Credential, CredentialError, CredentialFile};
 pub use listeners::ListenError;
-pub use piqueld_core::{BuildHistoryConfig, ImagesConfig, RetentionConfig};
 pub use telemetry::{Headers, HeadersError, OtlpEndpoint, TelemetryConfig};
 pub use tunnel::{TunnelConfig, TunnelConfigError, TunnelCredentials};
 
 use piqueld_core::TomlDiagnostic;
-use piqueld_core::manifest::PreviewLimits;
 use piqueld_core::names::{DNS_LABEL, is_label};
+use piqueld_core::settings::Requirement;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -61,13 +61,17 @@ pub(crate) use schema_from_raw;
 /// `piqueld --config` selects another. Every setting is optional unless it
 /// says otherwise. The daemon reads the file once at startup, so restart it
 /// to apply a change.
+///
+/// Daemon settings, such as how long history is kept, aren't set here:
+/// `piquelctl settings`, the API and the dashboard change them while the
+/// daemon runs.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DaemonConfig {
     /// API listeners and state directories.
     #[serde(default)]
     pub server: ServerConfig,
-    /// The website's origin and API token lifetimes.
+    /// The website's origin.
     #[serde(default)]
     pub auth: AuthConfig,
     /// The daemon's own tailnet node, which serves the website over HTTPS.
@@ -85,27 +89,9 @@ pub struct DaemonConfig {
     /// DNS provider accounts, for certificates and routes' DNS records.
     #[serde(default)]
     pub dns: DnsConfig,
-    /// How often piqueld checks for drift, and how long operations may take.
-    #[serde(default)]
-    pub reconciliation: ReconciliationConfig,
-    /// How long finished operations, events and the audit trail are kept.
-    #[serde(default)]
-    pub retention: RetentionConfig,
-    /// How much build output is kept, and for how long.
-    #[serde(default)]
-    pub build_history: BuildHistoryConfig,
-    /// Cleanup of the images this installation builds.
-    #[serde(default)]
-    pub images: ImagesConfig,
     /// Export of the daemon's traces, metrics and logs over OTLP.
     #[serde(default)]
     pub telemetry: TelemetryConfig,
-    /// How many previews may exist, and the resources their services get.
-    #[serde(default)]
-    pub previews: PreviewLimits,
-    /// Uploads of local worktrees by `piquelctl preview deploy --local`.
-    #[serde(default)]
-    pub snapshots: SnapshotsConfig,
     /// The disk space Git checkouts may take.
     #[serde(default)]
     pub checkouts: CheckoutsConfig,
@@ -182,19 +168,23 @@ impl DaemonConfig {
         Ok(config)
     }
 
+    /// What this installation offers the daemon settings that need it, such
+    /// as a build machine.
+    #[must_use]
+    pub fn requirements(&self) -> BTreeSet<Requirement> {
+        self.build
+            .remote
+            .iter()
+            .map(|_| Requirement::BuildMachine)
+            .collect()
+    }
+
     /// Checks cross-field and range invariants that serde cannot express:
     /// non-zero ports, distinct absolute state directories, a data directory
-    /// Docker can bind-mount,
-    /// the public origin, the Docker socket path, `server.allowed_hosts` DNS
-    /// hostname syntax, timeout and build-log bounds, and preview bounds a
-    /// manifest could set itself.
+    /// Docker can bind-mount, the public origin, the Docker socket path,
+    /// and `server.allowed_hosts` DNS hostname syntax.
     fn validate(&self) -> Result<(), ConfigError> {
-        /// The range of every setting counted in seconds.
-        const SECONDS: std::ops::RangeInclusive<u64> = 1..=86_400;
         self.telemetry.validate()?;
-        self.previews
-            .validate()
-            .map_err(|error| ConfigError::Invalid(error.to_string()))?;
         for (name, path) in [
             ("server.data_dir", &self.server.data_dir),
             ("server.runtime_dir", &self.server.runtime_dir),
@@ -217,10 +207,6 @@ impl DaemonConfig {
             AuthConfig::validate_origin(public_url)
                 .map_err(|error| ConfigError::Invalid(error.to_string()))?;
         }
-        ConfigError::require(
-            self.auth.max_token_days != Some(0),
-            "auth.max_token_days must be at least 1; omit it to allow tokens without expiry",
-        )?;
         self.tailscale.validate()?;
         self.ingress.validate()?;
         ConfigError::require(
@@ -239,25 +225,6 @@ impl DaemonConfig {
         ConfigError::require(
             self.server.port != 0,
             "server.port must be greater than zero",
-        )?;
-        let reconciliation = &self.reconciliation;
-        ConfigError::require(
-            SECONDS.contains(&reconciliation.scan_interval_seconds),
-            "reconciliation interval must be 1..=86400 seconds",
-        )?;
-        ConfigError::require(
-            SECONDS.contains(&reconciliation.prepare_timeout_seconds)
-                && SECONDS.contains(&reconciliation.convergence_timeout_seconds),
-            "reconciliation timeouts must be 1..=86400 seconds",
-        )?;
-        ConfigError::require(
-            SECONDS.contains(&self.images.cleanup_interval_seconds),
-            "images.cleanup_interval_seconds must be 1..=86400 seconds",
-        )?;
-        ConfigError::require(
-            (1..=64 * 1024 * 1024).contains(&self.build_history.log_max_bytes)
-                && (1..=3650).contains(&self.build_history.log_retention_days),
-            "build logs require 1..=67108864 bytes and 1..=3650 retention days",
         )
     }
 
@@ -273,7 +240,7 @@ impl DaemonConfig {
     }
 }
 
-/// The website's origin and API token lifetimes.
+/// The website's origin.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AuthConfig {
@@ -286,10 +253,6 @@ pub struct AuthConfig {
     /// set, otherwise the tailnet node's HTTPS URL if `tailscale.enabled` is
     /// set, otherwise `http://localhost:7845`.
     pub public_url: Option<String>,
-    /// The longest lifetime, in days, of new API tokens. When unset, tokens
-    /// may have any lifetime, including none. Existing tokens keep theirs.
-    #[schema(minimum = 1)]
-    pub max_token_days: Option<u32>,
 }
 
 impl AuthConfig {
@@ -407,7 +370,7 @@ fn dns_label(name: &str, value: &str) -> Result<(), ConfigError> {
 }
 
 /// The managed Caddy gateway that serves applications' routes.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct IngressConfig {
     /// Run the managed gateway and serve public routes on ports 80 and 443,
@@ -438,34 +401,6 @@ pub struct IngressConfig {
     /// subdomains.
     #[serde(default)]
     pub webhook_hostname: Option<piqueld_core::manifest::Hostname>,
-    /// Count the requests each route serves, for each environment's
-    /// traffic page, while `ingress.enabled` is set. piqueld stores hourly
-    /// totals, not the requests themselves or visitors' addresses. While the
-    /// daemon isn't connected to the gateway, such as while it restarts, the
-    /// gateway writes its requests, visitors' addresses and paths included, to
-    /// its own Docker log, which keeps up to 30 MB.
-    #[serde(default = "enabled")]
-    #[schema(default = true)]
-    pub traffic: bool,
-}
-
-/// `true`, the default of settings on unless turned off.
-const fn enabled() -> bool {
-    true
-}
-
-impl Default for IngressConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            public_addresses: Vec::new(),
-            acme: AcmeConfig::default(),
-            private: PrivateIngressConfig::default(),
-            tunnel: TunnelConfig::default(),
-            webhook_hostname: None,
-            traffic: enabled(),
-        }
-    }
 }
 
 impl IngressConfig {
@@ -630,27 +565,6 @@ pub struct DnsConfig {
     pub providers: Vec<dns::provider::DnsProviderConfig>,
 }
 
-/// Uploads of local worktrees by `piquelctl preview deploy --local`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
-#[serde(default, deny_unknown_fields)]
-pub struct SnapshotsConfig {
-    /// The largest Git bundle one upload may carry, in bytes. Larger uploads
-    /// fail with `snapshot_too_large`.
-    #[schema(value_type = u64, minimum = 1)]
-    pub max_upload_bytes: std::num::NonZeroU64,
-}
-
-impl Default for SnapshotsConfig {
-    fn default() -> Self {
-        Self {
-            max_upload_bytes: const {
-                std::num::NonZeroU64::new(256 * 1024 * 1024)
-                    .expect("the default upload limit is not zero")
-            },
-        }
-    }
-}
-
 /// The Git checkouts deployments read manifests from and build sources in,
 /// under `<data_dir>/checkouts`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
@@ -812,37 +726,6 @@ impl Default for DockerConfig {
         Self {
             socket: PathBuf::from("/var/run/docker.sock"),
             auto_initialize_swarm: true,
-        }
-    }
-}
-
-/// How often piqueld checks that Docker matches what is deployed, and how
-/// long a deployment may take.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, ToSchema)]
-#[serde(default, deny_unknown_fields)]
-pub struct ReconciliationConfig {
-    /// Seconds between full scans for drift between Docker and what is
-    /// deployed.
-    #[schema(minimum = 1, maximum = 86_400)]
-    pub scan_interval_seconds: u64,
-    /// Seconds a deployment may take to prepare: fetching its manifest,
-    /// resolving images and building them, including the time spent waiting
-    /// for a build slot.
-    #[schema(minimum = 1, maximum = 86_400)]
-    pub prepare_timeout_seconds: u64,
-    /// Seconds a deployment may wait without any service converging. It
-    /// restarts each time a service converges, so each link of a startup
-    /// dependency chain gets the full timeout.
-    #[schema(minimum = 1, maximum = 86_400)]
-    pub convergence_timeout_seconds: u64,
-}
-
-impl Default for ReconciliationConfig {
-    fn default() -> Self {
-        Self {
-            scan_interval_seconds: 60,
-            prepare_timeout_seconds: 300,
-            convergence_timeout_seconds: 120,
         }
     }
 }

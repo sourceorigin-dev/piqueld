@@ -14,7 +14,8 @@ categories = ["database"]
 include = ["/build.rs", "/migrations", "/src", "/LICENSE"]
 
 # `testing` adds `Store::open_unsynced`, for the throwaway stores of the
-# daemon's tests and browser fixture, and fixtures the daemon's tests share.
+# daemon's tests and browser fixture, `Store::assume_settings`, and fixtures
+# the daemon's tests share.
 # It only adds API: the daemon's store syncs regardless.
 [features]
 testing = []

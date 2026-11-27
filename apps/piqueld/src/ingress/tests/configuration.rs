@@ -227,19 +227,18 @@ async fn counted_routes_tag_their_requests_and_log_them_to_the_daemon() {
     let edge = edge();
     let build = |ingress: &Ingress| ingress.build_configuration(&table, &[], Some(&edge), None);
 
+    let traffic = |traffic| {
+        ingress
+            .store
+            .assume_settings(|settings| settings.ingress.traffic = traffic);
+    };
+    traffic(false);
     let configuration = build(&ingress);
     assert!(configuration.get("logging").is_none());
     let servers = &configuration["apps"]["http"]["servers"];
     assert!(servers["public"].get("logs").is_none());
-    assert!(
-        ingress
-            .bind_traffic()
-            .await
-            .expect("bind traffic succeeds")
-            .is_none()
-    );
 
-    let ingress = ingress.with_traffic(true);
+    traffic(true);
     let configuration = build(&ingress);
     let servers = &configuration["apps"]["http"]["servers"];
     for (server, environment, host) in [

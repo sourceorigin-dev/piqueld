@@ -1,9 +1,9 @@
-//! Event history, diagnostics, daemon statistics and settings, analytics,
-//! and the audit trail.
+//! Event history, diagnostics, daemon statistics, analytics, and the audit
+//! trail.
 use super::format::{now_ms, timestamp};
 use super::ui::{
-    Icon, PageHeader, Tone, badge, code_badge, empty, icon, key_values, loaded, loading, metric,
-    notice, when,
+    Icon, PageHeader, Tone, badge, code_badge, empty, icon, key_values, loaded, metric, notice,
+    when,
 };
 use super::{ClientErrorExt, UserError, access::can, dashboard_context, operation_events};
 use leptos::prelude::*;
@@ -844,48 +844,6 @@ fn resource_stats(stats: &DaemonStats) -> AnyView {
         </section>
     }
     .into_any()
-}
-
-/// `/settings` page: read-only daemon configuration grouped by section.
-#[component]
-pub(super) fn HostPage() -> impl IntoView {
-    let settings = RwSignal::new(None);
-    let error = RwSignal::new(None::<String>);
-    spawn_local(async move {
-        match Client::browser().system_configuration().await {
-            Ok(config) => settings.set(Some(config)),
-            Err(e) => error.set(Some(e.user_message())),
-        }
-    });
-    view! {
-        <PageHeader
-            title="Host settings"
-            description="Effective daemon configuration. Edit the TOML file and restart the daemon to change these values."
-        />
-        <div class="stack">
-            {move || match (settings.get(), error.get()) {
-                (Some(config), _) => {
-                    config
-                        .groups
-                        .into_iter()
-                        .map(|(group, values)| {
-                            view! {
-                                <section class="card">
-                                    <header>
-                                        <h3>{group}</h3>
-                                    </header>
-                                    {key_values(values)}
-                                </section>
-                            }
-                        })
-                        .collect_view()
-                        .into_any()
-                }
-                (None, Some(e)) => notice(Tone::Bad, e),
-                (None, None) => loading("Loading the configuration…"),
-            }}
-        </div>
-    }
 }
 
 /// `/analytics` page: deployment outcome, retry, duration and failure-code

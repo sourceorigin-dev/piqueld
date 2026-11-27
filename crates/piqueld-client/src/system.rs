@@ -2,9 +2,10 @@
 pub use piqueld_core::api::{
     BuilderCheck, BuilderStatus, BuiltOn, CertificateStatus, CheckStatus, DependencyStatus,
     DnsProviderStatus, DnsRecordState, DnsRecords, DnsStatus, HostConfiguration, ImageStatus,
-    IngressStatus, PrivateIngressStatus, PublicIngressStatus, ReadinessStatus, RegistryImageStatus,
-    RouteStatus, SnapshotLimits, SystemCheck, SystemCheckId, SystemChecks, SystemStatus,
-    TailnetStatus, TelemetryDestinationStatus, TelemetryReceiver, TelemetryStatus,
+    IngressStatus, PrivateIngressStatus, Pruning, PublicIngressStatus, ReadinessStatus,
+    RegistryImageStatus, RouteStatus, Setting, SettingChange, SettingKind, SettingSource,
+    SnapshotLimits, SystemCheck, SystemCheckId, SystemChecks, SystemStatus, TailnetStatus,
+    TelemetryDestinationStatus, TelemetryReceiver, TelemetryStatus,
 };
 
 use crate::{Client, ClientError, client::EnvelopedCall};
@@ -37,11 +38,35 @@ impl Client {
         self.generated.check_builder().data().await
     }
 
-    /// Reads effective daemon configuration without changing host settings.
+    /// Reads the daemon's settings: the host's, and every daemon setting
+    /// with its effective value.
     /// # Errors
     /// Returns transport, API or decoding errors.
     pub async fn system_configuration(&self) -> Result<HostConfiguration, ClientError> {
         self.generated.system_configuration().data().await
+    }
+
+    /// Sets the daemon setting `key` to `value`, which applies at once.
+    /// # Errors
+    /// Returns transport, decoding or API errors, including
+    /// `setting_unknown`, `setting_unavailable` and `setting_invalid`.
+    pub async fn put_setting(
+        &self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<Setting, ClientError> {
+        self.generated
+            .put_setting(key, &SettingChange { value })
+            .data()
+            .await
+    }
+
+    /// Resets the daemon setting `key` to its default, which applies at once.
+    /// # Errors
+    /// Returns transport, decoding or API errors, including
+    /// `setting_unknown`.
+    pub async fn reset_setting(&self, key: &str) -> Result<Setting, ClientError> {
+        self.generated.reset_setting(key).data().await
     }
 
     /// Checks the installation's health without changing it.

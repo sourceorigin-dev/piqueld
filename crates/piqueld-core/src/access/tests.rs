@@ -243,7 +243,8 @@ fn previews_permissions_stop_at_previews() {
 }
 
 /// New grants escalate when they add `admin` on an application the account
-/// lacked it on, or `accounts:manage` or `system:operate` it didn't hold.
+/// lacked it on, or `accounts:manage`, `system:operate` or `settings:manage`
+/// it didn't hold.
 #[test]
 fn escalation_is_newly_held_admin_or_installation_power() {
     let blog = grants(&[("admin", Some(&["app-blog0000"]))]);
@@ -253,6 +254,7 @@ fn escalation_is_newly_held_admin_or_installation_power() {
     let operate = grants(&[("system:operate", None)]);
     assert!(operate.escalates(&Grants::default()));
     assert!(!Grants::default().escalates(&operate));
+    assert!(grants(&[("settings:manage", None)]).escalates(&Grants::default()));
     let mut managing = Grants::admin();
     managing
         .grant(

@@ -18,17 +18,16 @@ addresses or cookies; see [what is counted](#what-is-counted).
 - Reading traffic needs the `logs:read`
   [permission](../accounts/permissions.md#grants) on the application.
 
-piqueld counts traffic by default. To turn it off, set
-[`ingress.traffic`](../reference/configuration-settings.md#ingresstraffic) to
-`false` and restart the daemon: on NixOS,
-`services.piqueld.settings.ingress.traffic = false;`, or in
-`/etc/piqueld/config.toml`:
+piqueld counts traffic by default. To turn it off, clear **Count traffic**
+on the dashboard's **Settings** page, or run on your machine:
 
-```toml
-[ingress]
-enabled = true
-traffic = false
+```console
+piquelctl settings set ingress.traffic false
 ```
+
+The gateway stops counting within seconds, without a restart. `ingress.traffic`
+is a [daemon setting](settings.md), which the daemon's configuration file
+doesn't set.
 
 ## See an environment's traffic
 
@@ -94,7 +93,7 @@ count as requests, but never as page views or visitors. The gateway's own
 health checks aren't counted.
 
 Counts are kept for
-[`retention.traffic_days`](../reference/configuration-settings.md#retentiontraffic_days),
+[`retention.traffic_days`](../reference/daemon-settings.md#retentiontraffic_days),
 90 by default. Deleting an environment deletes its counts.
 
 While the daemon restarts, the gateway can't hand it requests, so it writes
@@ -104,9 +103,9 @@ to 10 seconds after the daemon is back. Docker keeps that log, capped at
 
 ## Troubleshooting
 
-- **The tab says piqueld isn't counting traffic.** Set `ingress.enabled` and
-  `ingress.traffic` in the daemon's configuration, then restart it. Counts
-  recorded before stay readable.
+- **The tab says piqueld isn't counting traffic.** Turn on **Count traffic**
+  on the **Settings** page, and check that the daemon's configuration sets
+  `ingress.enabled`. Counts recorded before stay readable.
 - **Nothing appears.** New requests appear within a minute. Only routes to a
   service are counted: check the environment's **URLs** card, or
   `piquelctl env url`, for its routes.

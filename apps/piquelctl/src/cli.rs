@@ -376,9 +376,17 @@ pub(crate) enum Command {
     /// Show the daemon process's resource usage, storage, retained history,
     /// and queues, measured at most every 5 seconds (requires system:read).
     Resources,
-    /// Show the daemon's effective host settings, read-only (requires
-    /// system:read). Change them in its TOML configuration and restart it.
-    Settings,
+    /// Show and change the daemon's settings.
+    ///
+    /// Daemon settings, such as how long history is kept or how many
+    /// previews may exist, change at once with `settings set`. The host's
+    /// settings, such as its listeners, only change in the daemon's
+    /// configuration file, with a restart. `settings` alone lists them all.
+    Settings {
+        /// The settings operation to run; none lists them.
+        #[command(subcommand)]
+        command: Option<crate::settings::SettingsCommand>,
+    },
     /// Check this CLI's connection and the installation's health.
     ///
     /// Shows the resolved endpoint and credential, then each daemon check as

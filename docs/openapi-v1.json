@@ -669,6 +669,9 @@
           "variable_value_excessive",
           "preview_requires_repository",
           "preview_limit_reached",
+          "setting_unknown",
+          "setting_unavailable",
+          "setting_invalid",
           "preview_limits_defaulted",
           "preview_replicas_capped",
           "snapshot_too_large",
@@ -1967,7 +1970,7 @@
         "type": "object"
       },
       "CountedPreview": {
-        "description": "A preview counted against a `[previews]` limit.",
+        "description": "A preview counted against a `previews` limit.",
         "properties": {
           "application_id": {
             "$ref": "#/components/schemas/ApplicationId",
@@ -5190,7 +5193,7 @@
         "description": "Successful API response envelope.",
         "properties": {
           "data": {
-            "description": "Effective host settings loaded by the daemon; no mutation endpoint exists.",
+            "description": "The daemon's settings: the host's, which only its configuration file\nchanges, and the daemon settings, which the API changes.",
             "properties": {
               "groups": {
                 "additionalProperties": {
@@ -5199,8 +5202,15 @@
                   },
                   "type": "object"
                 },
-                "description": "Settings grouped by server, Docker, reconciliation and retention.",
+                "description": "The host's settings, read-only, grouped by section, such as `Server`\nor `Tailscale`, as display strings.",
                 "type": "object"
+              },
+              "settings": {
+                "description": "Every daemon setting, in sections, with its effective value.",
+                "items": {
+                  "$ref": "#/components/schemas/Setting"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -6395,7 +6405,7 @@
             "description": "A preview with its status, latest operation, hostnames, and branch state.",
             "properties": {
               "bounds": {
-                "description": "How `[previews]` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
+                "description": "How `previews` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
                 "items": {
                   "$ref": "#/components/schemas/DiagnosticView"
                 },
@@ -6632,6 +6642,85 @@
         ],
         "type": "object"
       },
+      "Envelope_Setting": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "description": "A daemon setting: installation policy, such as how long history is kept,\nwhich `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets.",
+            "properties": {
+              "default": {
+                "description": "Its value until it is changed."
+              },
+              "description": {
+                "description": "What it does, a paragraph per line.",
+                "type": "string"
+              },
+              "key": {
+                "description": "Its key, `section.field`, such as `retention.event_days`.",
+                "type": "string"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/SettingKind",
+                "description": "The values it takes."
+              },
+              "label": {
+                "description": "A short name, such as `Application events (days)`.",
+                "type": "string"
+              },
+              "needs": {
+                "description": "What the installation lacks for the setting to apply, such as a\nbuild machine; while set, the setting can't be changed.",
+                "nullable": true,
+                "type": "string"
+              },
+              "prunes": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/Pruning"
+                      }
+                    ],
+                    "description": "What it keeps, when a lower value deletes what only a higher one\nkept, for good."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              },
+              "section": {
+                "description": "The title of its section, such as `History`.",
+                "type": "string"
+              },
+              "source": {
+                "$ref": "#/components/schemas/SettingSource",
+                "description": "Where `value` comes from."
+              },
+              "value": {
+                "description": "Its effective value."
+              }
+            },
+            "required": [
+              "key",
+              "section",
+              "label",
+              "description",
+              "value",
+              "default",
+              "source",
+              "kind"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "Envelope_StoredSecret": {
         "description": "Successful API response envelope.",
         "properties": {
@@ -6740,7 +6829,7 @@
                         "$ref": "#/components/schemas/PreviewUsage"
                       }
                     ],
-                    "description": "Previews against the `[previews]` limits; absent when they could not\nbe counted."
+                    "description": "Previews against the `previews` limits; absent when they could not\nbe counted."
                   },
                   {
                     "enum": [
@@ -6996,7 +7085,7 @@
               "description": "A preview with its status, latest operation, hostnames, and branch state.",
               "properties": {
                 "bounds": {
-                  "description": "How `[previews]` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
+                  "description": "How `previews` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
                   "items": {
                     "$ref": "#/components/schemas/DiagnosticView"
                   },
@@ -8774,7 +8863,7 @@
         "type": "object"
       },
       "HostConfiguration": {
-        "description": "Effective host settings loaded by the daemon; no mutation endpoint exists.",
+        "description": "The daemon's settings: the host's, which only its configuration file\nchanges, and the daemon settings, which the API changes.",
         "properties": {
           "groups": {
             "additionalProperties": {
@@ -8783,8 +8872,15 @@
               },
               "type": "object"
             },
-            "description": "Settings grouped by server, Docker, reconciliation and retention.",
+            "description": "The host's settings, read-only, grouped by section, such as `Server`\nor `Tailscale`, as display strings.",
             "type": "object"
+          },
+          "settings": {
+            "description": "Every daemon setting, in sections, with its effective value.",
+            "items": {
+              "$ref": "#/components/schemas/Setting"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -10279,7 +10375,8 @@
           "accounts:manage",
           "audit:read",
           "telemetry:grant",
-          "notifications:manage"
+          "notifications:manage",
+          "settings:manage"
         ],
         "type": "string"
       },
@@ -10581,7 +10678,7 @@
         "type": "object"
       },
       "PreviewLimit": {
-        "description": "A `[previews]` count limit.",
+        "description": "A `previews` count limit.",
         "enum": [
           "per_application",
           "total"
@@ -10670,7 +10767,7 @@
         "type": "string"
       },
       "PreviewUsage": {
-        "description": "Previews against the daemon's `[previews]` limits.",
+        "description": "Previews against the daemon's `previews` limits.",
         "properties": {
           "applications": {
             "description": "Readable applications with previews, in name order.",
@@ -10721,7 +10818,7 @@
         "description": "A preview with its status, latest operation, hostnames, and branch state.",
         "properties": {
           "bounds": {
-            "description": "How `[previews]` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
+            "description": "How `previews` bounded its deployed target: services that run with\ndefault limits or fewer replicas than their manifest asks for.",
             "items": {
               "$ref": "#/components/schemas/DiagnosticView"
             },
@@ -10909,6 +11006,14 @@
           "previews"
         ],
         "type": "object"
+      },
+      "Pruning": {
+        "description": "What a daemon setting keeps, so that a lower value deletes the rest.",
+        "enum": [
+          "history",
+          "images"
+        ],
+        "type": "string"
       },
       "PublicIngressStatus": {
         "description": "How public routes reach the gateway: `[ingress.tunnel]` selects the mode.",
@@ -12786,6 +12891,174 @@
         ],
         "description": "Who is signed in and what the current credential may do."
       },
+      "Setting": {
+        "description": "A daemon setting: installation policy, such as how long history is kept,\nwhich `PUT /api/v1/system/settings/{key}` changes and `DELETE` resets.",
+        "properties": {
+          "default": {
+            "description": "Its value until it is changed."
+          },
+          "description": {
+            "description": "What it does, a paragraph per line.",
+            "type": "string"
+          },
+          "key": {
+            "description": "Its key, `section.field`, such as `retention.event_days`.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SettingKind",
+            "description": "The values it takes."
+          },
+          "label": {
+            "description": "A short name, such as `Application events (days)`.",
+            "type": "string"
+          },
+          "needs": {
+            "description": "What the installation lacks for the setting to apply, such as a\nbuild machine; while set, the setting can't be changed.",
+            "nullable": true,
+            "type": "string"
+          },
+          "prunes": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Pruning"
+                  }
+                ],
+                "description": "What it keeps, when a lower value deletes what only a higher one\nkept, for good."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          },
+          "section": {
+            "description": "The title of its section, such as `History`.",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SettingSource",
+            "description": "Where `value` comes from."
+          },
+          "value": {
+            "description": "Its effective value."
+          }
+        },
+        "required": [
+          "key",
+          "section",
+          "label",
+          "description",
+          "value",
+          "default",
+          "source",
+          "kind"
+        ],
+        "type": "object"
+      },
+      "SettingChange": {
+        "additionalProperties": false,
+        "description": "A new value for a daemon setting.",
+        "properties": {
+          "value": {
+            "description": "The value, of the setting's kind."
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "SettingKind": {
+        "description": "The values a daemon setting takes.",
+        "oneOf": [
+          {
+            "description": "A whole number from `minimum` to `maximum`, or `null` where\n`nullable`, which means no limit.",
+            "properties": {
+              "maximum": {
+                "description": "The largest value; absent when only the integer's size bounds it.",
+                "format": "int64",
+                "minimum": 0,
+                "nullable": true,
+                "type": "integer"
+              },
+              "minimum": {
+                "description": "The smallest value.",
+                "format": "int64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "nullable": {
+                "description": "Whether `null` is a value.",
+                "type": "boolean"
+              },
+              "type": {
+                "enum": [
+                  "integer"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "minimum",
+              "nullable",
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "`true` or `false`.",
+            "properties": {
+              "type": {
+                "enum": [
+                  "boolean"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "One of `values`.",
+            "properties": {
+              "type": {
+                "enum": [
+                  "choice"
+                ],
+                "type": "string"
+              },
+              "values": {
+                "description": "Every value it takes.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "values",
+              "type"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "SettingSource": {
+        "description": "Where a daemon setting's value comes from.",
+        "enum": [
+          "default",
+          "changed"
+        ],
+        "type": "string"
+      },
       "SetupLink": {
         "description": "First-account setup link, served only over the daemon's Unix socket.",
         "properties": {
@@ -12819,7 +13092,7 @@
             "type": "integer"
           },
           "max_upload_bytes": {
-            "description": "The largest bundle an upload may carry: `[snapshots] max_upload_bytes`.",
+            "description": "The largest bundle an upload may carry: the `snapshots.max_upload_bytes` setting.",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
@@ -13245,7 +13518,7 @@
                     "$ref": "#/components/schemas/PreviewUsage"
                   }
                 ],
-                "description": "Previews against the `[previews]` limits; absent when they could not\nbe counted."
+                "description": "Previews against the `previews` limits; absent when they could not\nbe counted."
               },
               {
                 "enum": [
@@ -17436,7 +17709,7 @@
     },
     "/api/v1/applications/{id}/previews": {
       "get": {
-        "description": "Each preview comes with its status, latest operation, hostnames, origin,\n`[previews]` bounds, sync state, and branch state, read with one\n`git ls-remote` of the manifest repository.\nRepository failures make every branch state `unknown`.",
+        "description": "Each preview comes with its status, latest operation, hostnames, origin,\n`previews` bounds, sync state, and branch state, read with one\n`git ls-remote` of the manifest repository.\nRepository failures make every branch state `unknown`.",
         "operationId": "listPreviews",
         "parameters": [
           {
@@ -17514,7 +17787,7 @@
         "x-piqueld-access": "apps:read"
       },
       "post": {
-        "description": "Creates and deploys a preview of `branch` of the application's manifest\nrepository, distinguished by `slot` when several previews share a branch.\nRepeating the request returns the existing preview of that branch and\nslot with its latest operation, without redeploying it. Applications\nwithout a manifest repository fail with `preview_requires_repository`.\nA new preview beyond a `[previews]` limit fails with 409\n`preview_limit_reached`, whose `details` are a `PreviewLimitReached`\nlisting the previews it counts. Needs no application revision.",
+        "description": "Creates and deploys a preview of `branch` of the application's manifest\nrepository, distinguished by `slot` when several previews share a branch.\nRepeating the request returns the existing preview of that branch and\nslot with its latest operation, without redeploying it. Applications\nwithout a manifest repository fail with `preview_requires_repository`.\nA new preview beyond a `previews` limit fails with 409\n`preview_limit_reached`, whose `details` are a `PreviewLimitReached`\nlisting the previews it counts. Needs no application revision.",
         "operationId": "createPreview",
         "parameters": [
           {
@@ -17652,7 +17925,7 @@
     },
     "/api/v1/applications/{id}/previews/local": {
       "post": {
-        "description": "The body is a Git bundle of one snapshot commit, at most `[snapshots]\nmax_upload_bytes`, thin or complete. It is verified and unbundled into a\nrepository of its own. The preview of `branch` and `slot` is created first if\nneeded, as `createPreview` does, and deploys the snapshot's manifest. Fails\nwith 409 `preview_requires_repository` or `preview_limit_reached`; 413\n`snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,\nwhose `details.prerequisites` names the commits a complete bundle must\ncontain; or 408 `snapshot_timed_out`. Needs no application revision.",
+        "description": "The body is a Git bundle of one snapshot commit, at most\n`snapshots.max_upload_bytes`, thin or complete. It is verified and\nunbundled into a repository of its own. The preview of `branch` and `slot` is created first if\nneeded, as `createPreview` does, and deploys the snapshot's manifest. Fails\nwith 409 `preview_requires_repository` or `preview_limit_reached`; 413\n`snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,\nwhose `details.prerequisites` names the commits a complete bundle must\ncontain; or 408 `snapshot_timed_out`. Needs no application revision.",
         "operationId": "deployLocalPreview",
         "parameters": [
           {
@@ -28694,7 +28967,7 @@
     },
     "/api/v1/auth/manage": {
       "post": {
-        "description": "Anyone may manage their own account. Changing other accounts requires\n`accounts:manage` and every grant the account holds; handing out grants\nrequires holding them (403 `permission_denied` or `permission_exceeded`).\nCreating tokens, invitations or enrollment links, and handing out `admin`,\n`accounts:manage` or `system:operate`, need a passkey sign-in within the\nlast 2 minutes.",
+        "description": "Anyone may manage their own account. Changing other accounts requires\n`accounts:manage` and every grant the account holds; handing out grants\nrequires holding them (403 `permission_denied` or `permission_exceeded`).\nCreating tokens, invitations or enrollment links, and handing out `admin`,\n`accounts:manage`, `system:operate` or `settings:manage`, need a passkey sign-in within the\nlast 2 minutes.",
         "operationId": "authManage",
         "requestBody": {
           "content": {
@@ -33867,7 +34140,7 @@
     },
     "/api/v1/system/configuration": {
       "get": {
-        "description": "Returns 503 when the daemon has no effective configuration to report.",
+        "description": "Lists the host's settings, which only the configuration file changes, and\nevery daemon setting with its effective value and where it comes from.\nReturns 503 when the daemon has no effective configuration to report.",
         "operationId": "systemConfiguration",
         "responses": {
           "200": {
@@ -33878,7 +34151,7 @@
                 }
               }
             },
-            "description": "Effective read-only host settings"
+            "description": "Effective settings"
           },
           "403": {
             "content": {
@@ -33901,7 +34174,7 @@
             "description": "Structured, sanitized error"
           }
         },
-        "summary": "Gets the effective read-only host configuration.",
+        "summary": "Gets the daemon's settings.",
         "x-piqueld-access": "system:read"
       }
     },
@@ -34063,6 +34336,196 @@
         },
         "summary": "Recovers from a lost secret master key.",
         "x-piqueld-access": "system:operate"
+      }
+    },
+    "/api/v1/system/settings/{key}": {
+      "delete": {
+        "description": "The default applies at once, and the reset is recorded in the audit\ntrail, even while the installation lacks what the setting needs. Fails\nwith 404 `setting_unknown`.",
+        "operationId": "resetSetting",
+        "parameters": [
+          {
+            "description": "The setting's key, such as `retention.event_days`",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Setting"
+                }
+              }
+            },
+            "description": "The setting, reset"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Resets a daemon setting to its default.",
+        "x-piqueld-access": "settings:manage"
+      },
+      "put": {
+        "description": "The value applies at once, without a restart, and the change is recorded\nin the audit trail. Fails with 404 `setting_unknown`, 409\n`setting_unavailable` for a setting the installation lacks what it needs\nfor, or 422 `setting_invalid` for a value the setting doesn't take.",
+        "operationId": "putSetting",
+        "parameters": [
+          {
+            "description": "The setting's key, such as `retention.event_days`",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Setting"
+                }
+              }
+            },
+            "description": "The setting, changed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request body stopped arriving"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Changes a daemon setting.",
+        "x-piqueld-access": "settings:manage"
       }
     },
     "/api/v1/system/status": {

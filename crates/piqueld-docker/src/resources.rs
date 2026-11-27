@@ -619,7 +619,7 @@ impl DockerApi for BollardDocker {
             }
             let directory = tempfile::tempdir().map_err(BuildError::Directory)?;
             let metadata = directory.path().join("metadata.json");
-            let builder = self.reachable_builder(log).await?;
+            let builder = self.reachable_builder(build.unavailable, log).await?;
             let mut command = if let Some(remote) = builder {
                 let mut command = remote.docker();
                 command.args(["buildx", "build"]).args(remote.options(

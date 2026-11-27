@@ -43,7 +43,7 @@ impl ApplicationService {
                 .as_ref()
                 .map_or_default(|status| status.borrow().clone()),
             snapshots: Some(piqueld_core::api::SnapshotLimits {
-                max_upload_bytes: self.sources.max_upload_bytes(),
+                max_upload_bytes: self.store.settings().snapshots.max_upload_bytes,
                 max_tree_bytes: self.sources.checkouts().max_bytes(),
                 max_files: crate::git::Checkouts::FILES as u64,
             }),
@@ -68,12 +68,28 @@ impl ApplicationService {
         Some(self.builder.as_ref()?.check().await)
     }
 
-    /// Returns effective host settings without exposing mutable configuration.
+    /// Returns the host's settings, read-only, and every daemon setting in
+    /// effect now.
     /// # Errors
     /// Returns an error if no host configuration was supplied at construction.
-    pub fn host_configuration(&self) -> Result<&HostConfiguration, ApplicationError> {
-        self.configuration()
-            .map(|configuration| &configuration.view)
+    pub fn host_configuration(&self) -> Result<HostConfiguration, ApplicationError> {
+        let mut view = self.configuration()?.view.clone();
+        view.settings = self.store.setting_views();
+        Ok(view)
+    }
+
+    /// Sets the daemon setting `key` to `value`, or resets it to its default
+    /// when `None`; it applies at once (see `Store::set_setting`).
+    /// # Errors
+    /// Refusal, an unknown setting, a value it doesn't take or one that
+    /// doesn't apply here, or storage errors.
+    pub async fn set_setting(
+        &self,
+        author: impl Into<piqueld_store::Author<'_>>,
+        key: &str,
+        value: Option<serde_json::Value>,
+    ) -> Result<piqueld_core::api::Setting, ApplicationError> {
+        Ok(self.store.set_setting(author, key, value).await?)
     }
 
     /// The attached host configuration.

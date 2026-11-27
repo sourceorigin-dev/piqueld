@@ -53,7 +53,7 @@ impl ApplicationService {
     /// Receives `bundle`, a snapshot of a local worktree of `branch` that
     /// announced `length` bytes (see `Snapshots`), and deploys it to the
     /// preview of `branch` and `slot`, creating that preview first if needed,
-    /// as creating one does: idempotently, within the `[previews]` limits.
+    /// as creating one does: idempotently, within the `previews` limits.
     ///
     /// # Errors
     /// Returns refused uploads, `preview_requires_repository`, and the
@@ -78,7 +78,7 @@ impl ApplicationService {
             .url
             .clone();
         let snapshots = self.sources.snapshots();
-        let limit = self.sources.max_upload_bytes();
+        let limit = self.store.settings().snapshots.max_upload_bytes;
         let received = snapshots
             .receive(
                 bundle,
@@ -165,7 +165,7 @@ impl ApplicationService {
     }
 
     /// Projects a preview with its status, latest operation, the hostnames
-    /// its deployed target routes, its branch state, how `[previews]`
+    /// its deployed target routes, its branch state, how `previews`
     /// bounded its deployed target, and whether it syncs with `connection`.
     async fn preview_view(
         &self,

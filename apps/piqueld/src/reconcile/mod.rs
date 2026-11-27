@@ -15,14 +15,10 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
-/// Longest preparing an operation's sources and images may take.
-const PREPARE_TIMEOUT: Duration = Duration::from_mins(5);
 /// [`RetryPolicy::default`]'s delay before the first retry.
 const DEFAULT_INITIAL_DELAY: Duration = Duration::from_millis(100);
 /// [`RetryPolicy::default`]'s longest delay between retries.
 const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(2);
-/// [`RetryPolicy::default`]'s longest wait for an environment to converge.
-const DEFAULT_CONVERGENCE_TIMEOUT: Duration = Duration::from_mins(2);
 
 /// Executes durable operations against `Docker` and `SQLite`.
 pub struct Controller<D> {
@@ -33,8 +29,10 @@ pub struct Controller<D> {
     /// against the latest operation. Secret deletion takes it too, through
     /// `RuntimeBoundary::lock_mutations`.
     mutations: Arc<tokio::sync::Mutex<()>>,
-    /// Deadline for resolving images, building sources, and fetching manifests.
-    prepare_timeout: Duration,
+    /// Deadline for resolving images, building sources, and fetching
+    /// manifests, when fixed (see [`Self::with_prepare_timeout`]); otherwise
+    /// `reconciliation.prepare_timeout_seconds` (see [`Self::prepare_timeout`]).
+    prepare_timeout: Option<Duration>,
     /// Database holding intent, operations and the journal.
     store: Arc<Store>,
     /// The Git checkouts and local snapshots deployments build from.
@@ -66,7 +64,7 @@ impl<D> Controller<D> {
                 std::num::NonZeroU8::MIN,
             )),
             mutations: Arc::default(),
-            prepare_timeout: PREPARE_TIMEOUT,
+            prepare_timeout: None,
             store,
             sources,
             ingress: None,
@@ -125,25 +123,36 @@ impl<D> Controller<D> {
         Ok(sockets.project(linked, granted))
     }
 
-    /// Applies the daemon's validated configuration: reconciliation timing,
-    /// how many images build at once, and image retention. Call it before
-    /// [`Self::runtime`], which shares the build limit.
+    /// Applies the daemon's validated configuration: how many images build
+    /// at once. Call it before [`Self::runtime`], which shares the build
+    /// limit. Daemon settings, such as timeouts and image retention, are read
+    /// from the store where they apply.
     #[must_use]
     pub fn with_config(mut self, config: &piqueld_config::DaemonConfig) -> Self {
-        let reconciliation = &config.reconciliation;
-        self.prepare_timeout = Duration::from_secs(reconciliation.prepare_timeout_seconds);
-        self.retry.convergence_timeout =
-            Duration::from_secs(reconciliation.convergence_timeout_seconds);
         self.docker = Arc::new(self.docker.with_builds(config.build.parallel));
-        self.images = images::ImageRetention::new(&config.images);
         self
     }
 
-    /// Sets the complete image-preparation deadline.
+    /// Fixes the complete image-preparation deadline, which otherwise
+    /// follows `reconciliation.prepare_timeout_seconds`.
     #[must_use]
     pub fn with_prepare_timeout(mut self, timeout: Duration) -> Self {
-        self.prepare_timeout = timeout;
+        self.prepare_timeout = Some(timeout);
         self
+    }
+
+    /// The image-preparation deadline in effect now.
+    fn prepare_timeout(&self) -> Duration {
+        self.prepare_timeout
+            .unwrap_or_else(|| self.store.settings().reconciliation.prepare_timeout())
+    }
+
+    /// How long an operation waits without a service converging, in effect
+    /// now.
+    fn convergence_timeout(&self) -> Duration {
+        self.retry
+            .convergence_timeout
+            .unwrap_or_else(|| self.store.settings().reconciliation.convergence_timeout())
     }
 
     /// Replaces the retry policy used by this controller.
@@ -182,8 +191,9 @@ pub struct RetryPolicy {
     pub initial_delay: Duration,
     /// Upper bound for exponential retry delay.
     pub max_delay: Duration,
-    /// Maximum time an operation waits without a service converging.
-    pub convergence_timeout: Duration,
+    /// Maximum time an operation waits without a service converging, when
+    /// fixed; `None` follows `reconciliation.convergence_timeout_seconds`.
+    pub convergence_timeout: Option<Duration>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -220,7 +230,7 @@ impl Default for RetryPolicy {
             attempts: 4,
             initial_delay: DEFAULT_INITIAL_DELAY,
             max_delay: DEFAULT_MAX_DELAY,
-            convergence_timeout: DEFAULT_CONVERGENCE_TIMEOUT,
+            convergence_timeout: None,
         }
     }
 }

@@ -21,17 +21,22 @@ pub struct BuildLog {
     store: Arc<Store>,
     /// ID of the build the output belongs to.
     id: i64,
+    /// `build_history.log_max_bytes` as the build started, which it keeps
+    /// whatever the setting becomes.
+    cap: u32,
     /// Held across store writes, so output is stored in the order it arrived.
     output: Arc<tokio::sync::Mutex<Kept>>,
 }
 impl BuildLog {
     /// Creates the log of build `id`, capped at the store's configured size.
     fn new(store: Arc<Store>, id: i64) -> Self {
-        let cap = usize::try_from(store.build_log_max_bytes()).unwrap_or(usize::MAX);
+        let cap = store.build_log_max_bytes();
+        let kept = Kept::new(usize::try_from(cap).unwrap_or(usize::MAX));
         Self {
             store,
             id,
-            output: Arc::new(tokio::sync::Mutex::new(Kept::new(cap))),
+            cap,
+            output: Arc::new(tokio::sync::Mutex::new(kept)),
         }
     }
     /// Appends output, keeping the start and the end of it within the
@@ -45,7 +50,11 @@ impl BuildLog {
         }
         let head = output.head(bytes);
         if !head.is_empty()
-            && self.store.append_build_log(self.id, head, stream).await? == LogAppend::Closed
+            && self
+                .store
+                .append_build_log(self.id, head, stream, self.cap)
+                .await?
+                == LogAppend::Closed
         {
             output.closed = true;
             return Ok(());
@@ -61,7 +70,7 @@ impl BuildLog {
     async fn finish(&self, outcome: &BuildOutcome) -> Result<(), StoreError> {
         let mut output = self.output.lock().await;
         self.store
-            .finish_build(self.id, outcome, &output.ending())
+            .finish_build(self.id, outcome, &output.ending(), self.cap)
             .await?;
         output.finished();
         Ok(())

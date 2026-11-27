@@ -87,7 +87,7 @@ a preview's ID. Preview creation,
 deployment and deletion take no `expected_generation` and never advance the
 application revision: creation is idempotent on (branch, slot) instead.
 
-Creating a preview that would exceed a [`[previews]` limit](configuration.md#previews)
+Creating a preview that would exceed a [`previews` limit](configuration.md#previews)
 fails with 409 `preview_limit_reached`. Its `details` are a `PreviewLimitReached`:
 the `limit` (`per_application` or `total`), its `max`, and the `previews` it
 counts that the caller may read, oldest deployment first, each with its `id`,
@@ -119,7 +119,9 @@ when the complete normalized manifest is needed.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v1/system/status` | Daemon status, with `tailscale`: the [tailnet node](configuration.md#tailnet-node)'s login and certificate state; `images`: the built images cleanup kept, the total size of those it removed since the daemon started, and when it last ran; DNS providers and certificates only with `system:read`; `builder`: the [build machine](configuration.md#build-machine), its repository and its latest check, only when the host has one and with `system:read`; preview counts per readable application; `snapshots`: the largest [local snapshot](#local-snapshots) upload, working tree and file count the daemon accepts |
-| GET | `/api/v1/system/configuration` | Effective read-only host settings (`system:read`); 503 `configuration_unavailable` without them |
+| GET | `/api/v1/system/configuration` | The daemon's settings (`system:read`): `groups`, the host's, read-only, and `settings`, every [daemon setting](../operations/settings.md) with its `value`, `default`, `source` (`default` or `changed`) and the values it takes; 503 `configuration_unavailable` without them |
+| PUT | `/api/v1/system/settings/{key}` | Change a daemon setting to `{"value": …}`, at once (`settings:manage`); 404 `setting_unknown`, 409 `setting_unavailable` when the installation lacks what it needs, 422 `setting_invalid` out of its range |
+| DELETE | `/api/v1/system/settings/{key}` | Reset a daemon setting to its default, at once (`settings:manage`); 404 `setting_unknown` |
 | GET | `/api/v1/system/checks` | Installation checks, each `pass`, `warn`, `fail` or `skip` with a next step (`system:read`); see [`piquelctl doctor`](cli.md#installation-checks) |
 | POST | `/api/v1/system/dns/refresh` | Check DNS provider credentials and zones now (`system:operate`); returns `DnsStatus`, empty without `system:read` |
 | POST | `/api/v1/system/builder/check` | Check that the [build machine](configuration.md#build-machine)'s BuildKit daemon answers now (`system:operate`); returns that `BuilderCheck`, which names no address and becomes the status's latest check, or 404 `builder_not_configured` without a build machine |
@@ -153,7 +155,7 @@ when the complete normalized manifest is needed.
 | POST | `/api/v1/environments/{id}/start` | Start a stopped environment, as `reconcile` does; 202 with its latest operation |
 | POST | `/api/v1/environments/{id}/restore` | [Restore](#restoring-a-deployment) an earlier, succeeded deployment exactly: `{ "deployment": "operation-..." }`; 202 with `AcceptedOperation` |
 | GET | `/api/v1/applications/{id}/previews` | Previews with status, latest operation, hostnames, the `origin` of what they run and branch state (`exists`, `moved`, `gone`, `local` or `unknown`), from one `git ls-remote`, shared by the reads of a repository that arrive while it runs; at most four repositories are listed at once |
-| POST | `/api/v1/applications/{id}/previews` | Create and deploy a preview: `{ "branch": "feat/login", "slot": "agent-2" }`; 202 with `CreatedPreview` (`preview`, `operation`, `created: true`), or 200 with the existing preview of that branch and slot and its latest operation (`created: false`), never redeploying it. 409 `preview_requires_repository` without a manifest repository, `preview_limit_reached` over a `[previews]` limit |
+| POST | `/api/v1/applications/{id}/previews` | Create and deploy a preview: `{ "branch": "feat/login", "slot": "agent-2" }`; 202 with `CreatedPreview` (`preview`, `operation`, `created: true`), or 200 with the existing preview of that branch and slot and its latest operation (`created: false`), never redeploying it. 409 `preview_requires_repository` without a manifest repository, `preview_limit_reached` over a `previews` limit |
 | POST | `/api/v1/applications/{id}/previews/local?branch=…&slot=…` | Deploy a [local snapshot](#local-snapshots): the body is a Git bundle (`application/octet-stream`); 202 with `CreatedPreview`. 408 `snapshot_timed_out`, 413 `snapshot_too_large`, 422 `snapshot_invalid` or `snapshot_base_unavailable` |
 | POST | `/api/v1/applications/{id}/previews/prune` | Delete each listed preview whose branch is confirmed gone: `{ "previews": [preview IDs] }`; returns the `DeletedPreview`s and keeps the rest. 502 `repository_unavailable`, deleting nothing, when the repository cannot be read |
 | GET | `/api/v1/previews/{id}` | One `PreviewView` |
@@ -175,26 +177,25 @@ deploys a snapshot of a local worktree, which `piquelctl preview deploy
 --local` makes, to the preview of `branch` and `slot`. It needs
 `previews:deploy` (included in `apps:deploy`) and no `expected_generation`, and creates the preview first if needed, as
 `POST /api/v1/applications/{id}/previews` does: idempotently, within the
-`[previews]` limits. The response is always 202 with `CreatedPreview`, whose
+`previews` limits. The response is always 202 with `CreatedPreview`, whose
 `created` says whether the preview was new, and a new deployment.
 
 The body is a Git bundle, sent as `application/octet-stream` (a
-`Content-Length` lets the daemon refuse it early), of exactly one ref pointing at the snapshot commit. A thin
-bundle needs prerequisites (at most 64), which the daemon fetches from the
-application's repository: its base and, for a history with merges, ancestors
-of that base. `422 snapshot_base_unavailable` (with `details.prerequisites`)
-means it could not fetch them: push the base, or send a complete bundle. The body is
-streamed to the daemon's data directory and refused with `413
-snapshot_too_large` (with `details.limit`) once it exceeds `[snapshots]
-max_upload_bytes`, which is separate from the 2 MiB limit of other bodies,
-and also once its files and directories (or the prerequisites fetched for it)
-take more than `[checkouts] max_bytes`, which `details.limit` then names, or
-number more than 500,000.
-`SystemStatus.snapshots` reports these limits. The daemon receives two uploads
-at a time, each holding its slot until its deployment is accepted; a body that sends nothing for 30
-seconds, or an upload not received within 10 minutes, fails with `408
-snapshot_timed_out`. The
-bundle is received into a new repository of its own: a malformed header, a
+`Content-Length` lets the daemon refuse it early), of exactly one ref pointing
+at the snapshot commit. A thin bundle needs prerequisites (at most 64), which
+the daemon fetches from the application's repository: its base and, for a
+history with merges, ancestors of that base. `422 snapshot_base_unavailable`
+(with `details.prerequisites`) means it could not fetch them: push the base,
+or send a complete bundle. The body is streamed to the daemon's data directory
+and refused with `413 snapshot_too_large` (with `details.limit`) once it
+exceeds `snapshots.max_upload_bytes`, which is separate from the 2 MiB limit
+of other bodies, and also once its files and directories (or the prerequisites
+fetched for it) take more than `[checkouts] max_bytes`, which `details.limit`
+then names, or number more than 500,000. `SystemStatus.snapshots` reports
+these limits. The daemon receives two uploads at a time, each holding its slot
+until its deployment is accepted; a body that sends nothing for 30 seconds, or
+an upload not received within 10 minutes, fails with `408 snapshot_timed_out`.
+The bundle is received into a new repository of its own: a malformed header, a
 bundle `git bundle verify` rejects, an object that fails Git's checks,
 prerequisites that are not all ancestors of one of them, the base, or a
 snapshot that does not descend from its base is `422 snapshot_invalid`.
@@ -203,7 +204,7 @@ The deployment's `origin` is `{ "type": "local", "commit": …, "base": … }`
 (`base` absent for a complete bundle). It reads its manifest from the snapshot
 at the application's manifest path, renders `git.sha` as the snapshot commit,
 and builds `repository = "self"` services from the snapshot, through the
-preview's usual path, `[previews]` bounds and build priority included. It
+preview's usual path, `previews` bounds and build priority included. It
 records the branch's head, or its absence, for deploy on push, so a snapshot
 stays until its branch moves or is first pushed. `PreviewView.origin` is the
 origin of what the preview runs (of its latest deployment before one was

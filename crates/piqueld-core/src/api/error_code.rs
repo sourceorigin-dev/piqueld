@@ -459,15 +459,23 @@ string_enum! {
         /// 409: previews need an application whose manifest comes from a
         /// repository.
         PreviewRequiresRepository => "preview_requires_repository",
-        /// 409: creating a preview would exceed a `[previews]` count limit;
+        /// 409: creating a preview would exceed a `previews` count limit;
         /// `details` is a `PreviewLimitReached`.
         PreviewLimitReached => "preview_limit_reached",
-        /// A preview service runs with a `[previews]` default limit it does not set.
+        /// 404: no daemon setting has this key.
+        SettingUnknown => "setting_unknown",
+        /// 409: the setting doesn't apply to this installation, which lacks
+        /// what it needs, such as a build machine.
+        SettingUnavailable => "setting_unavailable",
+        /// 422: the value is not one the setting takes; the message says
+        /// which it does.
+        SettingInvalid => "setting_invalid",
+        /// A preview service runs with a `previews` default limit it does not set.
         PreviewLimitsDefaulted => "preview_limits_defaulted",
-        /// A preview service asks for more replicas than `[previews] max_replicas`.
+        /// A preview service asks for more replicas than `previews.max_replicas`.
         PreviewReplicasCapped => "preview_replicas_capped",
         /// 413: a local snapshot bundle is larger than
-        /// `[snapshots] max_upload_bytes`, or its tree than
+        /// the `snapshots.max_upload_bytes` setting, or its tree than
         /// `[checkouts] max_bytes`.
         SnapshotTooLarge => "snapshot_too_large",
         /// 422: a local snapshot upload is not a valid Git bundle of one

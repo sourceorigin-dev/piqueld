@@ -271,7 +271,7 @@ pass `-H unix://<that engine's socket>` to each `docker` command.
   `piquelctl build logs <number>`.
 - **The first deployment fails with `preparation_timeout`.** The build took
   longer than
-  [`reconciliation.prepare_timeout_seconds`](../user/reference/configuration-settings.md#reconciliationprepare_timeout_seconds),
+  [`reconciliation.prepare_timeout_seconds`](../user/reference/daemon-settings.md#reconciliationprepare_timeout_seconds),
   300 seconds by default. Deploy again with
   `piquelctl app deploy piqueld-dev`: the steps that finished
   stay cached. If it keeps failing, raise the setting.

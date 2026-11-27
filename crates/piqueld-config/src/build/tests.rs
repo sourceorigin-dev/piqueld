@@ -38,7 +38,6 @@ fn a_build_machine_needs_its_builder_and_its_repository() {
     for invalid in [
         "builder = 'tcp://build.example.ts.net:1234'",
         "repository = 'build.example.ts.net:5000/piqueld'",
-        "unavailable = 'local'",
         "builder = 'tcp://build.example.ts.net'\nrepository = 'registry.example/piqueld'",
         "builder = 'tcp://build.example:1234'\nrepository = 'piqueld'",
     ] {

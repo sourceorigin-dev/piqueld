@@ -19,12 +19,12 @@ enum Outcome {
 /// A store keeping three deployments per environment, and every one for a
 /// day, and one successful one, with `production` of a saved application.
 async fn store() -> (tempfile::TempDir, Store, EnvironmentId) {
-    let (temp, mut store) = Store::temporary().await;
-    store.deployment_retention = DeploymentRetention {
-        days: 1,
-        per_environment: 3,
-        succeeded: 1,
-    };
+    let (temp, store) = Store::temporary().await;
+    store.assume_settings(|settings| {
+        settings.retention.deployment_days = 1;
+        settings.retention.deployments_per_environment = 3;
+        settings.images.keep_deployments = 1;
+    });
     let template = ApplicationTemplate::from(&prebuilt("app-history-test"));
     let template = template
         .to_manifest()

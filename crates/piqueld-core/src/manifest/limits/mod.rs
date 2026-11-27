@@ -1,84 +1,11 @@
-//! Installation-wide preview limits, the daemon's `[previews]` section, and
-//! how they bound what a preview deploys.
+//! How the installation-wide preview limits, the daemon's `previews`
+//! settings, bound what a preview deploys.
 
-use super::validation::{MAX_CPU_MILLIS, REPLICAS};
 use super::{NormalizedApplication, ValidatedResourceLimits};
+pub use crate::settings::PreviewLimits;
 use crate::{ApiErrorCode, DiagnosticSeverity, PlanDiagnostic};
-use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
-
-/// How many previews may exist, and what each preview service may use.
-///
-/// Counts are checked when a preview is created, so lowering one below the
-/// current count keeps every existing preview running and only refuses new
-/// ones. Resource bounds apply when a preview's manifest is rendered, so a
-/// preview picks up changed bounds on its next deployment. Environments are
-/// never bounded.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(default, deny_unknown_fields)]
-pub struct PreviewLimits {
-    /// Previews one application may have; creating more fails with
-    /// `preview_limit_reached`. `0` refuses every new preview.
-    pub max_per_application: u32,
-    /// Previews the whole installation may have; creating more fails with
-    /// `preview_limit_reached`. `0` refuses every new preview.
-    pub max_total: u32,
-    /// CPU limit, in millicores, of preview services that set none.
-    #[schema(minimum = 1, maximum = 1_048_576)]
-    pub default_cpu_millis: u32,
-    /// Memory limit, in bytes, of preview services that set none.
-    #[schema(minimum = 1, maximum = 9_223_372_036_854_775_807_i64)]
-    pub default_memory_bytes: u64,
-    /// Most replicas a preview service runs; manifests asking for more are
-    /// capped with a warning.
-    #[schema(minimum = 1, maximum = 100)]
-    pub max_replicas: u16,
-}
-
-impl Default for PreviewLimits {
-    fn default() -> Self {
-        Self {
-            max_per_application: 10,
-            max_total: 30,
-            default_cpu_millis: 500,
-            default_memory_bytes: 512 * 1024 * 1024,
-            max_replicas: 1,
-        }
-    }
-}
-
-/// A `[previews]` bound no manifest could set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum PreviewLimitsError {
-    /// The default CPU limit is zero or above the manifest maximum.
-    #[error("previews.default_cpu_millis must be between 1 and {}", MAX_CPU_MILLIS)]
-    Cpu,
-    /// The default memory limit is zero or does not fit Docker's `i64`.
-    #[error("previews.default_memory_bytes must be between 1 and {}", i64::MAX)]
-    Memory,
-    /// The replica cap is outside the manifest's replica range.
-    #[error("previews.max_replicas must be between {} and {}", REPLICAS.start(), REPLICAS.end())]
-    Replicas,
-}
 
 impl PreviewLimits {
-    /// Checks that every bound is a value a manifest could set itself.
-    ///
-    /// # Errors
-    /// Returns the first bound out of its manifest range.
-    pub fn validate(&self) -> Result<(), PreviewLimitsError> {
-        if !(1..=MAX_CPU_MILLIS).contains(&self.default_cpu_millis) {
-            return Err(PreviewLimitsError::Cpu);
-        }
-        if self.default_memory_bytes == 0 || i64::try_from(self.default_memory_bytes).is_err() {
-            return Err(PreviewLimitsError::Memory);
-        }
-        if !REPLICAS.contains(&self.max_replicas) {
-            return Err(PreviewLimitsError::Replicas);
-        }
-        Ok(())
-    }
-
     /// Bounds a preview's rendered services: each CPU or memory limit a
     /// service leaves unset gets its default, and replicas above
     /// `max_replicas` are capped. Explicit limits are kept. Returns a
@@ -118,7 +45,7 @@ impl PreviewLimits {
                 warnings.push(warning(
                     ApiErrorCode::PreviewLimitsDefaulted,
                     format!(
-                        "{} runs with the [previews] default of {}, since its manifest sets no limit",
+                        "{} runs with the previews default of {}, since its manifest sets no limit",
                         service.name,
                         defaulted.join(" and ")
                     ),
@@ -128,7 +55,7 @@ impl PreviewLimits {
                 warnings.push(warning(
                     ApiErrorCode::PreviewReplicasCapped,
                     format!(
-                        "{} asks for {} replicas; previews run at most {} ([previews] max_replicas)",
+                        "{} asks for {} replicas; previews run at most {} (previews.max_replicas)",
                         service.name, service.replicas, self.max_replicas
                     ),
                 ));

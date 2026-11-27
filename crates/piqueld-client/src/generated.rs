@@ -1507,7 +1507,7 @@ impl Client {
     /*Lists an application's previews
 
     Each preview comes with its status, latest operation, hostnames, origin,
-    `[previews]` bounds, sync state, and branch state, read with one
+    `previews` bounds, sync state, and branch state, read with one
     `git ls-remote` of the manifest repository.
     Repository failures make every branch state `unknown`.
 
@@ -1575,7 +1575,7 @@ impl Client {
     Repeating the request returns the existing preview of that branch and
     slot with its latest operation, without redeploying it. Applications
     without a manifest repository fail with `preview_requires_repository`.
-    A new preview beyond a `[previews]` limit fails with 409
+    A new preview beyond a `previews` limit fails with 409
     `preview_limit_reached`, whose `details` are a `PreviewLimitReached`
     listing the previews it counts. Needs no application revision.
 
@@ -1654,9 +1654,9 @@ impl Client {
     }
     /*Deploys a snapshot of a local worktree to a preview
 
-    The body is a Git bundle of one snapshot commit, at most `[snapshots]
-    max_upload_bytes`, thin or complete. It is verified and unbundled into a
-    repository of its own. The preview of `branch` and `slot` is created first if
+    The body is a Git bundle of one snapshot commit, at most
+    `snapshots.max_upload_bytes`, thin or complete. It is verified and
+    unbundled into a repository of its own. The preview of `branch` and `slot` is created first if
     needed, as `createPreview` does, and deploys the snapshot's manifest. Fails
     with 409 `preview_requires_repository` or `preview_limit_reached`; 413
     `snapshot_too_large`; 422 `snapshot_invalid`; 422 `snapshot_base_unavailable`,
@@ -7922,7 +7922,7 @@ impl Client {
     `accounts:manage` and every grant the account holds; handing out grants
     requires holding them (403 `permission_denied` or `permission_exceeded`).
     Creating tokens, invitations or enrollment links, and handing out `admin`,
-    `accounts:manage` or `system:operate`, need a passkey sign-in within the
+    `accounts:manage`, `system:operate` or `settings:manage`, need a passkey sign-in within the
     last 2 minutes.
 
     Sends a `POST` request to `/api/v1/auth/manage`
@@ -11747,8 +11747,10 @@ impl Client {
             _ => Err(Error::UnexpectedResponse(response)),
         }
     }
-    /*Gets the effective read-only host configuration
+    /*Gets the daemon's settings
 
+    Lists the host's settings, which only the configuration file changes, and
+    every daemon setting with its effective value and where it comes from.
     Returns 503 when the daemon has no effective configuration to report.
 
     Sends a `GET` request to `/api/v1/system/configuration`
@@ -11986,6 +11988,146 @@ impl Client {
                 crate::client::decode_response(response).await?,
             )),
             409u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            503u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Changes a daemon setting
+
+    The value applies at once, without a restart, and the change is recorded
+    in the audit trail. Fails with 404 `setting_unknown`, 409
+    `setting_unavailable` for a setting the installation lacks what it needs
+    for, or 422 `setting_invalid` for a value the setting doesn't take.
+
+    Sends a `PUT` request to `/api/v1/system/settings/{key}`
+
+    Arguments:
+    - `key`: The setting's key, such as `retention.event_days`
+    - `body`
+    */
+    pub async fn put_setting<'a>(
+        &'a self,
+        key: &'a str,
+        body: &'a piqueld_core::api::SettingChange,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::api::Setting>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!(
+            "{}/api/v1/system/settings/{}",
+            self.baseurl,
+            encode_path(&key.to_string()),
+        );
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .put(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .json(&body)
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "put_setting",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            400u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            404u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            408u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            409u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            415u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            422u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            503u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            _ => Err(Error::UnexpectedResponse(response)),
+        }
+    }
+    /*Resets a daemon setting to its default
+
+    The default applies at once, and the reset is recorded in the audit
+    trail, even while the installation lacks what the setting needs. Fails
+    with 404 `setting_unknown`.
+
+    Sends a `DELETE` request to `/api/v1/system/settings/{key}`
+
+    Arguments:
+    - `key`: The setting's key, such as `retention.event_days`
+    */
+    pub async fn reset_setting<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Result<
+        ResponseValue<piqueld_core::api::Envelope<piqueld_core::api::Setting>>,
+        Error<piqueld_core::api::ErrorBody>,
+    > {
+        let url = format!(
+            "{}/api/v1/system/settings/{}",
+            self.baseurl,
+            encode_path(&key.to_string()),
+        );
+        let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+        header_map.append(
+            ::reqwest::header::HeaderName::from_static("api-version"),
+            ::reqwest::header::HeaderValue::from_static(Self::api_version()),
+        );
+        #[allow(unused_mut)]
+        let mut request = self
+            .client
+            .delete(url)
+            .header(
+                ::reqwest::header::ACCEPT,
+                ::reqwest::header::HeaderValue::from_static("application/json"),
+            )
+            .headers(header_map)
+            .build()?;
+        let info = OperationInfo {
+            operation_id: "reset_setting",
+        };
+        self.pre(&mut request, &info).await?;
+        let result = self.exec(request, &info).await;
+        self.post(&result, &info).await?;
+        let response = result?;
+        match response.status().as_u16() {
+            200u16 => crate::client::decode_response(response).await,
+            400u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            403u16 => Err(Error::ErrorResponse(
+                crate::client::decode_response(response).await?,
+            )),
+            404u16 => Err(Error::ErrorResponse(
                 crate::client::decode_response(response).await?,
             )),
             503u16 => Err(Error::ErrorResponse(

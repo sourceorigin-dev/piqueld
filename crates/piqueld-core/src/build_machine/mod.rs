@@ -13,8 +13,6 @@ pub struct RemoteBuild {
     pub builder: BuilderEndpoint,
     /// The image repository the builds are pushed to.
     pub repository: BuildRepository,
-    /// What a build does while the build machine can't be reached.
-    pub unavailable: WhenUnavailable,
 }
 
 /// What a build does while its build machine can't be reached.
