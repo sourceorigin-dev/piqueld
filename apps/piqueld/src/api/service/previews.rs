@@ -122,9 +122,13 @@ impl ApplicationService {
     ) -> Result<Vec<DeletedPreview>, ApplicationError> {
         let author = author.into();
         let listing = self.heads(application).await?.1;
-        let heads = listing.as_ref().as_ref().map_err(|error| {
-            ApplicationError::RepositoryUnavailable(anyhow::anyhow!("{}", error.chain()))
-        })?;
+        let heads =
+            listing
+                .as_ref()
+                .as_ref()
+                .map_err(|error| ApplicationError::RepositoryUnavailable {
+                    reason: error.chain(),
+                })?;
         let mut deleted = Vec::new();
         for preview in self.store.previews(application).await? {
             let origins = self.store.preview_origins(&preview.id).await?;

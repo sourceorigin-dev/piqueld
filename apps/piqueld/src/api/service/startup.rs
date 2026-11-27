@@ -1,8 +1,8 @@
 //! Production service construction and reconciliation startup.
 
 use super::ApplicationService;
+use super::StartupError;
 use crate::{operations::OperationError, reconcile::Controller};
-use anyhow::Context;
 use piqueld_config::DaemonConfig;
 use piqueld_core::ErrorChain as _;
 use piqueld_core::Phase;
@@ -38,7 +38,7 @@ impl ApplicationService {
         config: &DaemonConfig,
         telemetry: crate::telemetry::Telemetry,
         cancellation: CancellationToken,
-    ) -> anyhow::Result<(Self, crate::auth::Auth, JoinHandle<Result<(), StoreError>>)> {
+    ) -> Result<(Self, crate::auth::Auth, JoinHandle<Result<(), StoreError>>), StartupError> {
         let (store, journaled) = Self::open_store(config, &telemetry).await?;
         let auth = crate::auth::Auth::initialize(&store, config).await?;
         let reserved = Self::installation_hostnames(config)?;
@@ -55,7 +55,7 @@ impl ApplicationService {
         let sources = Arc::new(
             crate::git::Sources::open(&config.server.data_dir)
                 .await
-                .context("failed to prepare the Git checkouts and snapshots directories")?
+                .map_err(StartupError::PrepareSources)?
                 .configured(config),
         );
         let wake = Arc::new(Notify::new());
@@ -79,7 +79,7 @@ impl ApplicationService {
         let webhook_listener = ingress
             .bind_webhooks()
             .await
-            .context("failed to bind the webhook socket")?;
+            .map_err(StartupError::BindWebhooks)?;
         let traffic = ingress.bind_traffic().await?;
         service.record_start(config).await?;
         let scan_interval = Duration::from_secs(config.reconciliation.scan_interval_seconds);
@@ -194,11 +194,11 @@ impl ApplicationService {
     /// Records this start, then reports the roll-back it follows, if any.
     /// A report that can't be sent is logged rather than stopping the
     /// daemon, and is sent on the next start.
-    async fn record_start(&self, config: &DaemonConfig) -> anyhow::Result<()> {
+    async fn record_start(&self, config: &DaemonConfig) -> Result<(), StartupError> {
         self.store
             .record_daemon_started(env!("CARGO_PKG_VERSION"))
             .await
-            .context("failed to record the daemon start")?;
+            .map_err(StartupError::RecordStart)?;
         if let Err(error) = crate::backup::Backups::new(&config.server.data_dir)
             .report_roll_back(&self.store)
             .await
@@ -212,15 +212,15 @@ impl ApplicationService {
     /// when one is configured. Neither need be reachable yet:
     /// `establish_swarm` waits for Docker and its socket, and registering the
     /// build machine only records its address.
-    async fn connect_docker(config: &DaemonConfig) -> anyhow::Result<BollardDocker> {
-        let docker = BollardDocker::connect(&config.docker.socket)
-            .context("failed to configure the Docker Engine client")?;
+    async fn connect_docker(config: &DaemonConfig) -> Result<BollardDocker, StartupError> {
+        let docker =
+            BollardDocker::connect(&config.docker.socket).map_err(StartupError::ConfigureDocker)?;
         let Some(remote) = &config.build.remote else {
             return Ok(docker);
         };
         let builder = piqueld_docker::RemoteBuilder::register(remote, &config.server.data_dir)
             .await
-            .context("failed to register the build machine with Docker Buildx")?;
+            .map_err(StartupError::RegisterBuilder)?;
         Ok(docker.with_builder(builder))
     }
 
@@ -231,10 +231,10 @@ impl ApplicationService {
     async fn open_store(
         config: &DaemonConfig,
         telemetry: &crate::telemetry::Telemetry,
-    ) -> anyhow::Result<(Arc<Store>, piqueld_store::JournalPosition)> {
+    ) -> Result<(Arc<Store>, piqueld_store::JournalPosition), StartupError> {
         let store = Store::open(config.server.database_path())
             .await
-            .context("failed to open control-plane state")?
+            .map_err(StartupError::OpenStore)?
             .with_build_history(config.build_history.clone())
             .with_observability(
                 &config.retention,
@@ -260,7 +260,7 @@ impl ApplicationService {
     /// may not claim, nor their subdomains: the website's, which could
     /// otherwise act on its passkeys or cookies, the dashboard's, and the
     /// webhooks'.
-    fn installation_hostnames(config: &DaemonConfig) -> anyhow::Result<Vec<Hostname>> {
+    fn installation_hostnames(config: &DaemonConfig) -> Result<Vec<Hostname>, StartupError> {
         let website = piqueld_config::AuthConfig::validate_origin(config.public_url())?
             .domain()
             .and_then(|host| Hostname::parse(host.trim_end_matches('.')).ok());

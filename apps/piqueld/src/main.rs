@@ -254,7 +254,7 @@ async fn serve(mut config: DaemonConfig, telemetry: Telemetry) -> Result<()> {
                 if let Some(node) = tailnet {
                     node.leave().await;
                 }
-                return Err(error);
+                return Err(error.into());
             }
         };
     let state = state.with_tailnet(tailnet.as_ref().map(Node::status));

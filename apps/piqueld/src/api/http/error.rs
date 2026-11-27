@@ -659,13 +659,13 @@ impl From<ApplicationError> for ApiError {
                 "runtime plan contains blocking conflicts",
             )
             .details(json!({"diagnostics":diagnostics})),
-            ApplicationError::RepositoryUnavailable(error) => {
-                tracing::warn!(?error, "manifest repository unavailable");
+            ApplicationError::RepositoryUnavailable { reason } => {
+                tracing::warn!(error = %reason, "manifest repository unavailable");
                 Self::new(
                     StatusCode::BAD_GATEWAY,
                     ApiErrorCode::RepositoryUnavailable,
                     format!(
-                        "The manifest repository could not be read ({error:#}); no preview was deleted"
+                        "The manifest repository could not be read ({reason}); no preview was deleted"
                     ),
                 )
             }

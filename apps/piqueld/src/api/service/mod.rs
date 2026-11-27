@@ -13,6 +13,7 @@ mod promotions;
 mod queries;
 mod restores;
 mod startup;
+mod startup_error;
 mod sync;
 mod system;
 mod telemetry;
@@ -31,6 +32,7 @@ use piqueld_core::{
     api::{SecretAccess, SecretMetadata, StoredSecret},
 };
 use piqueld_store::{Store, StoreError};
+pub(super) use startup_error::StartupError;
 use std::sync::Arc;
 pub use webhooks::{Delivery, WEBHOOK_BODY_LIMIT, WEBHOOK_PATH, WebhookError};
 
@@ -69,7 +71,10 @@ pub enum ApplicationError {
     Runtime(#[from] BoundaryError),
     /// The manifest repository could not be read, so no branch is known gone.
     #[error("the manifest repository could not be read")]
-    RepositoryUnavailable(#[source] anyhow::Error),
+    RepositoryUnavailable {
+        /// Why, as the failure's text.
+        reason: String,
+    },
     /// An uploaded local snapshot was refused.
     #[error(transparent)]
     Snapshot(#[from] crate::git::snapshot::SnapshotError),
@@ -182,9 +187,7 @@ impl ApplicationService {
         store: Arc<Store>,
         runtime: Arc<dyn RuntimeBoundary>,
         sources: Arc<crate::git::Sources>,
-    ) -> anyhow::Result<Self> {
-        use anyhow::Context;
-
+    ) -> Result<Self, StartupError> {
         Ok(Self {
             store,
             runtime,
@@ -206,7 +209,7 @@ impl ApplicationService {
             listings: Arc::default(),
             admission: Arc::default(),
             notifier: notification_worker::Notifier::new()
-                .context("initialize the notification webhook client")?,
+                .map_err(StartupError::NotificationClient)?,
             public_url: String::new(),
         })
     }
