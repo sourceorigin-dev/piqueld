@@ -339,7 +339,8 @@ impl Store {
     /// `listed_at_ms`: adopts those the database doesn't know as detached
     /// volumes, and forgets detached volumes Docker no longer has. An
     /// attached volume missing from Docker is kept: it may not be created
-    /// yet. So is a record newer than the listing, which can't include it.
+    /// yet. So is a record newer than the listing, which can't include it,
+    /// and one being removed, which only its removal forgets.
     ///
     /// # Errors
     /// Returns a storage error.
@@ -372,7 +373,7 @@ impl Store {
         )
         .map_err(StoreError::corrupt)?;
         sqlx::query!(
-            "DELETE FROM volumes WHERE docker_name NOT IN (SELECT value FROM json_each(?1)) AND NOT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=volumes.id) AND created_at_ms<?2",
+            "DELETE FROM volumes WHERE docker_name NOT IN (SELECT value FROM json_each(?1)) AND NOT EXISTS(SELECT 1 FROM volume_bindings WHERE volume_id=volumes.id) AND created_at_ms<?2 AND removing=0",
             names,
             listed_at_ms
         )

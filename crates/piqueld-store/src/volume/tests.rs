@@ -290,9 +290,10 @@ async fn a_survey_adopts_unknown_volumes_records_sizes_and_forgets_gone_detached
     );
 }
 
-/// While Docker removes a deleted volume, it is hidden, can't be attached,
-/// and a survey still listing it doesn't adopt it again; a failed removal
-/// keeps it under its ID, and a finished one forgets it.
+/// While Docker removes a deleted volume, it is hidden and can't be
+/// attached, a survey still listing it doesn't adopt it again, and one no
+/// longer listing it doesn't forget it; a failed removal keeps it under its
+/// ID, and a finished one forgets it.
 #[tokio::test]
 async fn a_volume_being_removed_is_hidden_until_docker_removed_it() {
     let (_temp, store) = Store::temporary().await;
@@ -316,6 +317,10 @@ async fn a_volume_being_removed_is_hidden_until_docker_removed_it() {
     };
     store
         .record_volume_survey(&[listed], now_ms())
+        .await
+        .expect("record volume survey succeeds");
+    store
+        .record_volume_survey(&[], now_ms())
         .await
         .expect("record volume survey succeeds");
     assert_eq!(store.volumes(false).await.expect("volumes succeeds"), []);
