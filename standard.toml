@@ -14,14 +14,15 @@ cargo-in-ci = [
   "cargo xtask dist",
 ]
 
+# The package whose `main.rs`, examples and integration tests are the edge
+# where `anyhow` collects errors. Its library returns `thiserror` errors, so
+# `anyhow` is no dependency of the library's own code.
+anyhow-crates = ["piqueld"]
+
 # Jobs that watch `ci` from outside, so `ci` mustn't need them.
 ci-watchers = ["fail-fast"]
 
 [deviations]
-
-[deviations.anyhow-edges]
-reason = "the `piqueld` library returns anyhow errors across about 100 uses in 30 files, from startup to the ingress and backup workers; typed errors are a project of their own, not part of this sweep"
-crates = ["piqueld"]
 
 [deviations.generated-lints]
 reason = "Progenitor writes these attributes into the generated client, so the file keeps them"
