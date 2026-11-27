@@ -1,5 +1,6 @@
 use super::{DiagnosticCode, OperationError};
-use piqueld_docker::DockerError;
+use crate::{application::GitBuildError, git::GitError};
+use piqueld_docker::{DockerError, command::CommandError};
 use std::error::Error;
 
 #[tokio::test]
@@ -11,7 +12,9 @@ async fn command_diagnostics_keep_stage_and_exit_code_without_output() {
     )
     .await
     .expect_err("run recorded fails");
-    let diagnostic = crate::application::BoundaryError::GitBuild(error.into()).diagnostic();
+    let diagnostic =
+        crate::application::BoundaryError::GitBuild(GitBuildError::Git(GitError::Command(error)))
+            .diagnostic();
     assert_eq!(
         diagnostic.causes,
         [
@@ -56,7 +59,12 @@ fn operation_errors_retain_causes_without_exposing_them_publicly() {
             .is::<sqlx::Error>()
     );
 
-    let git = OperationError::GitBuildFailed(anyhow::anyhow!(diagnostic));
+    let git = OperationError::GitBuildFailed(GitBuildError::Git(GitError::Command(
+        CommandError::Spawn {
+            operation: diagnostic,
+            source: std::io::Error::other("spawn"),
+        },
+    )));
     assert_eq!(git.code(), "git_build_failed");
     assert_eq!(
         git.source().expect("source succeeds").to_string(),
@@ -71,7 +79,7 @@ fn only_a_missing_manifest_file_reads_as_not_found() {
         (std::io::ErrorKind::NotFound, "manifest_not_found"),
         (std::io::ErrorKind::PermissionDenied, "manifest_invalid"),
     ] {
-        let error = anyhow::Error::from(std::io::Error::from(kind)).context("manifest path");
+        let error = std::io::Error::from(kind);
         assert_eq!(OperationError::manifest_input(error).code(), code);
     }
 }
@@ -182,13 +190,12 @@ fn preparation_diagnostics_preserve_safe_typed_causes() {
             .expect("the value serializes")
             .contains("registry-secret")
     );
-    let io = crate::application::BoundaryError::GitBuild(
-        anyhow::Error::from(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "secret path",
-        ))
-        .context("repository URL with secret"),
-    )
+    let io = crate::application::BoundaryError::GitBuild(GitBuildError::Git(GitError::Command(
+        CommandError::Spawn {
+            operation: "repository URL with secret",
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "secret path"),
+        },
+    )))
     .diagnostic();
     assert!(io.causes.contains(&"I/O failure: PermissionDenied".into()));
     assert!(

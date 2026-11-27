@@ -1,6 +1,6 @@
 //! Resolves accepted manifest inputs during operation execution.
 
-use super::{BoundaryError, RuntimeBoundary};
+use super::{BoundaryError, GitBuildError, RuntimeBoundary};
 use crate::reconcile::ImagesInUse;
 use async_trait::async_trait;
 use futures_util::{StreamExt, TryStreamExt, stream};
@@ -385,19 +385,16 @@ impl<D: DockerApi> ApplicationRuntime<D> {
             }
             Source::Git { repository, build } => {
                 let SourceRepository::Git(repository) = repository else {
-                    return Err(BoundaryError::GitBuild(anyhow::anyhow!(
-                        "the manifest repository source has no fetched manifest commit"
-                    )));
+                    return Err(BoundaryError::GitBuild(GitBuildError::NoFetchedCommit));
                 };
                 let (commit, image_id) = self
                     .prepare_git(environment, name, &source, repository, build)
                     .await
-                    .map_err(|error| match error.downcast::<crate::git::GitError>() {
-                        Ok(crate::git::GitError::Build(
+                    .map_err(|error| match error {
+                        GitBuildError::Git(crate::git::GitError::Build(
                             docker @ DockerError::BuilderUnavailable(_),
                         )) => BoundaryError::Runtime(docker),
-                        Ok(git) => BoundaryError::GitBuild(git.into()),
-                        Err(error) => BoundaryError::GitBuild(error),
+                        error => BoundaryError::GitBuild(error),
                     })?;
                 Ok(ResolvedSource::Git {
                     requested: source,
@@ -423,7 +420,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         source: &Source,
         repository: &piqueld_core::manifest::GitRepository,
         build: &piqueld_core::manifest::ValidatedBuild,
-    ) -> anyhow::Result<(String, piqueld_core::BuiltImage)> {
+    ) -> Result<(String, piqueld_core::BuiltImage), GitBuildError> {
         let docker = self.docker.as_ref();
         let repository =
             crate::git::snapshot::SnapshotSource::checkout(self.snapshot.as_ref(), repository);
@@ -453,7 +450,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
                 Some(earlier) => GitImage::Reused(earlier),
                 None => GitImage::Built(checkout.build(build, owner, docker, Some(log)).await?),
             };
-            anyhow::Ok((checkout.commit, image))
+            Ok::<_, GitBuildError>((checkout.commit, image))
         }
         .await;
         match result {
@@ -472,8 +469,8 @@ impl<D: DockerApi> ApplicationRuntime<D> {
             }
             Err(error) => {
                 if !matches!(
-                    error.downcast_ref(),
-                    Some(crate::git::GitError::Build(
+                    error,
+                    GitBuildError::Git(crate::git::GitError::Build(
                         DockerError::BuilderUnavailable(_)
                     ))
                 ) {
@@ -503,7 +500,7 @@ impl<D: DockerApi> ApplicationRuntime<D> {
         environment: &EnvironmentId,
         source: &Source,
         commit: &str,
-    ) -> anyhow::Result<Option<piqueld_store::ReusableBuild>> {
+    ) -> Result<Option<piqueld_store::ReusableBuild>, GitBuildError> {
         if self.rebuild {
             return Ok(None);
         }

@@ -463,7 +463,7 @@ impl<D: DockerApi> Controller<D> {
                         IngressError::Store(StoreError::IllegalTransition) => {
                             OperationError::Superseded
                         }
-                        error => OperationError::Ingress(error.into()),
+                        error => OperationError::Ingress(error),
                     })?;
             } else {
                 self.store

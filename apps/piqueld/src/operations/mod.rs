@@ -10,6 +10,31 @@ pub(crate) fn diagnostic_id() -> String {
     format!("diagnostic-{}", uuid::Uuid::now_v7().simple())
 }
 
+/// Why a repository manifest could not be located or decoded.
+#[derive(Debug, thiserror::Error)]
+pub enum ManifestInputError {
+    /// The checkout could not locate the file.
+    #[error("{0}")]
+    Git(#[from] crate::git::GitError),
+    /// The file could not be read.
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    /// The manifest fails validation.
+    #[error("{0}")]
+    Invalid(#[from] piqueld_core::ValidationErrors),
+}
+
+impl ManifestInputError {
+    /// Whether a missing file caused it.
+    fn not_found(&self) -> bool {
+        match self {
+            Self::Git(error) => error.not_found(),
+            Self::Io(error) => error.kind() == std::io::ErrorKind::NotFound,
+            Self::Invalid(_) => false,
+        }
+    }
+}
+
 /// Sanitized failure returned while executing a durable operation.
 #[derive(Debug, thiserror::Error)]
 pub enum OperationError {
@@ -18,7 +43,7 @@ pub enum OperationError {
     HostnameConflict(#[source] piqueld_store::StoreError),
     /// Managed gateway could not apply the required routing transition.
     #[error("ingress configuration could not be applied; see ingress health and daemon logs")]
-    Ingress(#[source] anyhow::Error),
+    Ingress(#[source] crate::ingress::IngressError),
     /// Docker failure with its complete diagnostic cause chain.
     #[error("{}", OperationError::docker_classification(.0))]
     Docker(#[source] piqueld_docker::DockerError),
@@ -52,7 +77,7 @@ pub enum OperationError {
         not_found: bool,
         /// Internal I/O, validation, or checkout diagnostic.
         #[source]
-        source: anyhow::Error,
+        source: ManifestInputError,
     },
     /// A repository file a service mounts cannot be captured at the
     /// manifest's commit.
@@ -97,7 +122,7 @@ pub enum OperationError {
     },
     /// Git source preparation failed before rollout.
     #[error("Git source build failed")]
-    GitBuildFailed(#[source] anyhow::Error),
+    GitBuildFailed(#[source] crate::application::GitBuildError),
     /// The build machine could not be reached to build an image.
     #[error("the build machine is unreachable")]
     BuilderUnavailable,
@@ -115,7 +140,7 @@ pub enum OperationError {
     ManifestNotFound,
     /// Repository access failed before reading its manifest.
     #[error("could not fetch the manifest repository")]
-    ManifestFetchFailed(#[source] anyhow::Error),
+    ManifestFetchFailed(#[source] crate::git::GitError),
     /// The fetched manifest is invalid or selects another application.
     #[error("repository manifest is invalid or its application name does not match")]
     ManifestInvalid,
@@ -228,11 +253,12 @@ impl OperationError {
 
     /// A repository manifest that could not be read because of `source`: not
     /// found only when an I/O `NotFound` caused it, invalid otherwise.
-    pub(crate) fn manifest_input(source: anyhow::Error) -> Self {
-        let not_found = source
-            .downcast_ref::<std::io::Error>()
-            .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound);
-        Self::ManifestInput { not_found, source }
+    pub(crate) fn manifest_input(source: impl Into<ManifestInputError>) -> Self {
+        let source = source.into();
+        Self::ManifestInput {
+            not_found: source.not_found(),
+            source,
+        }
     }
 }
 
@@ -317,7 +343,8 @@ impl OperationError {
     #[must_use]
     pub fn diagnostic(&self) -> piqueld_core::observability::Diagnostic {
         let source: &(dyn std::error::Error + 'static) = match self {
-            Self::GitBuildFailed(error) | Self::ManifestFetchFailed(error) => error.as_ref(),
+            Self::GitBuildFailed(error) => error,
+            Self::ManifestFetchFailed(error) => error,
             _ => self,
         };
         Self::diagnostic_from(self.diagnostic_code(), self.message(), source)
@@ -481,7 +508,7 @@ impl crate::application::BoundaryError {
             Self::ImageUnavailable(error) => (error.diagnostic_code(), error.message()),
         };
         let source: &(dyn std::error::Error + 'static) = match self {
-            Self::GitBuild(error) => error.as_ref(),
+            Self::GitBuild(error) => error,
             _ => self,
         };
         let mut diagnostic = OperationError::diagnostic_from(code, summary, source);
