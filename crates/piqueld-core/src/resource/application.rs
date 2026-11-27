@@ -12,7 +12,21 @@ use super::{
 };
 use crate::manifest::NormalizedApplication;
 use crate::manifest::dependencies::StartupOrder;
-use crate::{ApplicationName, DockerNetworkName, DockerVolumeName, EnvironmentId, Release};
+use crate::{
+    ApplicationName, DockerNetworkName, DockerVolumeName, EnvironmentId, Release, VolumeName,
+};
+
+/// The volume an environment binds a manifest volume name to, as a target
+/// mounts it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoundVolume {
+    /// Its Docker name.
+    pub docker_name: DockerVolumeName,
+    /// The environment its Docker labels name: the one that created it.
+    /// Docker can't relabel a volume, so it stays the same when the volume
+    /// is attached to another environment.
+    pub owner: EnvironmentId,
+}
 
 /// Desired state for an application and its resources.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -125,6 +139,37 @@ impl ResolvedApplication {
                 .collect(),
             services,
         })
+    }
+
+    /// Points each volume, and every service and job mount of it, at the
+    /// Docker volume `bound` binds its name to, labelled as the environment
+    /// that created it. Compiling names volumes as they were named before
+    /// volumes were tracked; saving a target binds them, so a volume the
+    /// environment rebound since is the one it mounts.
+    pub fn bind_volumes(&mut self, bound: &BTreeMap<VolumeName, BoundVolume>) {
+        let ownership = self.ownership();
+        let mut renamed = BTreeMap::new();
+        for volume in &mut self.volumes {
+            let Some(bound) = bound.get(&volume.logical_name) else {
+                continue;
+            };
+            renamed.insert(volume.name.clone(), bound.docker_name.clone());
+            volume.name = bound.docker_name.clone();
+            volume.labels = Ownership {
+                environment_id: bound.owner.clone(),
+                ..ownership.clone()
+            }
+            .labels();
+        }
+        let containers = self
+            .services
+            .iter_mut()
+            .chain(self.jobs.iter_mut().map(|job| &mut job.container));
+        for mount in containers.flat_map(|container| &mut container.mounts) {
+            if let Some(name) = renamed.get(&mount.volume_name) {
+                mount.volume_name = name.clone();
+            }
+        }
     }
 
     /// The ownership of the environment's resources that belong to no

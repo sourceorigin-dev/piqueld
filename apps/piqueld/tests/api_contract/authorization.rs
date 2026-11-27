@@ -423,6 +423,51 @@ async fn telemetry_grants_need_the_telemetry_grant_permission() {
     assert!(environment.telemetry);
 }
 
+/// Attaching a volume needs `apps:write` on the environment and
+/// `system:operate`, since a detached volume may hold any application's
+/// data: either alone is refused.
+#[tokio::test]
+async fn attaching_a_volume_needs_apps_write_and_system_operate() {
+    use piqueld::api::{Actor, ApplicationError};
+    use piqueld_core::access::Denied;
+    use piqueld_core::{VolumeId, VolumeName};
+    use piqueld_store::{Caller, StoreError};
+    let temp = tempfile::tempdir().expect("a temporary directory");
+    let state = state(&temp).await;
+    let database = database(&temp);
+    let saved = save(&state, manifest()).await;
+    let id = production(&state, &saved.application_id).await;
+    let account = |name| {
+        Actor::Account(Caller {
+            credential_id: name,
+            user_id: name,
+        })
+    };
+    seed_account(&database, "writer", &[("apps:write", None)]).await;
+    seed_account(&database, "operator", &[("system:operate", None)]).await;
+    let grants = [("apps:write", None), ("system:operate", None)];
+    seed_account(&database, "both", &grants).await;
+    let (name, volume) = (
+        VolumeName::parse("data").expect("the value parses"),
+        VolumeId::parse("volume-missing").expect("the value parses"),
+    );
+    let attach = |actor| state.attach_volume(actor, &id, &name, &volume);
+    assert!(matches!(
+        attach(account("writer")).await,
+        Err(ApplicationError::Store(StoreError::Denied(
+            Denied::Missing(_)
+        )))
+    ));
+    assert!(matches!(
+        attach(account("operator")).await,
+        Err(ApplicationError::Store(StoreError::Denied(_)))
+    ));
+    assert!(!matches!(
+        attach(account("both")).await,
+        Err(ApplicationError::Store(StoreError::Denied(_)))
+    ));
+}
+
 /// Destinations need `notifications:manage` to change, and it or
 /// `system:read` to list; they require HTTPS URLs and never return them.
 #[tokio::test]

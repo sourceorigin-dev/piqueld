@@ -294,6 +294,12 @@ impl RuntimeBoundary for FakeRuntime {
         Arc::new(tokio::sync::Mutex::new(())).lock_owned().await
     }
 
+    async fn remove_volume(
+        &self,
+        _volume: &piqueld_store::DockerVolume,
+    ) -> Result<(), BoundaryError> {
+        Ok(())
+    }
     async fn remove_secrets(
         &self,
         _application: &piqueld_core::EnvironmentId,

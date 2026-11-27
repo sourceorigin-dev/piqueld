@@ -46,6 +46,7 @@ impl ApplicationService {
         }
         let docker = Arc::new(Self::connect_docker(config).await?);
         store.interrupt_actions(None).await?;
+        store.resume_volume_removals().await?;
         store.restart_failure_windows().await?;
         let ingress = Arc::new(crate::ingress::Ingress::from_config(
             config,
@@ -109,9 +110,10 @@ impl ApplicationService {
                     cancellation.cancel();
                     result
                 };
-                let (result, (), ()) = tokio::join!(
+                let (result, (), (), ()) = tokio::join!(
                     reconcile,
                     reconciler.run_image_cleanup(cancellation.child_token()),
+                    reconciler.run_volume_survey(cancellation.child_token()),
                     ingress.run(cancellation.child_token()),
                 );
                 result

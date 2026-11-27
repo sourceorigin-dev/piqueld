@@ -112,7 +112,8 @@ impl ApplicationService {
         let candidate = self.store.promotion_candidate(id, selection, None).await?;
         self.check_source_health(&candidate).await?;
         let target = &candidate.target;
-        let (rendering, desired, secrets) = self.instantiate(&candidate).await?;
+        let (rendering, mut desired, secrets) = self.instantiate(&candidate).await?;
+        self.store.bind_existing_volumes(&mut desired).await?;
         let app = &rendering.application;
         let observed = self.runtime.observe(target).await?;
         let new_volumes = desired
@@ -122,6 +123,7 @@ impl ApplicationService {
                 !observed
                     .volumes
                     .iter()
+                    .chain(&observed.other_volumes)
                     .any(|observed| observed.name == volume.name.as_str())
             })
             .map(|volume| volume.logical_name.to_string())

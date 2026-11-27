@@ -5,10 +5,12 @@ use super::{
 };
 use crate::{Mutation, MutationResponse};
 use piqueld_core::{
-    EnvironmentId, NormalizedApplication, access::Grants, api::SavedApplication, auth::User,
-    manifest::ValidatedTemplate,
+    EnvironmentId, InstanceId, NormalizedApplication, ResolutionSet, ResolvedApplication,
+    ResolvedSource, ServiceName, access::Grants, api::SavedApplication, auth::User,
+    compile_application, manifest::ValidatedTemplate,
 };
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Parses the application manifest named `name`, with `spec`, TOML following
@@ -28,6 +30,43 @@ pub(super) fn prebuilt(id: &str) -> NormalizedApplication {
     ))
     .expect("parse toml succeeds")
     .normalize(ApplicationId::parse(id).expect("the application id parses"))
+}
+
+/// The image `web` of the [`prebuilt`] application pulls.
+const IMAGE: &str = "ghcr.io/example/notes:1.4.0";
+
+/// `IMAGE` resolved to a digest of 64 `byte`s.
+pub(super) fn pulled(byte: char) -> ResolvedSource {
+    ResolvedSource::parse_image(
+        IMAGE,
+        format!(
+            "ghcr.io/example/notes@sha256:{}",
+            byte.to_string().repeat(64)
+        ),
+    )
+    .expect("parse image succeeds")
+}
+
+/// `application` compiled for `environment`, with `web` pulled as `web`.
+pub(super) fn target(
+    application: &NormalizedApplication,
+    environment: &EnvironmentId,
+    instance: &str,
+    web: ResolvedSource,
+) -> ResolvedApplication {
+    compile_application(
+        application,
+        environment,
+        InstanceId::parse(instance).expect("the instance id parses"),
+        &ResolutionSet {
+            sources: BTreeMap::from([(
+                ServiceName::parse("web").expect("the service name parses"),
+                web,
+            )]),
+            secret_names: BTreeMap::new(),
+        },
+    )
+    .expect("compile application succeeds")
 }
 
 /// Renames application `id` to `name` through the name edit, as the CLI and

@@ -811,7 +811,9 @@ impl Plan {
 
     /// Adds `EnsureVolume` for missing volumes and diagnostics for unowned or
     /// misconfigured ones. Returns whether every desired volume already exists
-    /// intact. Volume labels are only checked for ownership, not drift.
+    /// intact. Volume labels are only checked for ownership, not drift: by
+    /// the environment the desired labels name, which come from the volume's
+    /// record and may be another environment, the one that created it.
     fn ensure_volumes(
         &mut self,
         desired: &ResolvedApplication,
@@ -823,6 +825,7 @@ impl Plan {
             match observed
                 .volumes
                 .iter()
+                .chain(&observed.other_volumes)
                 .find(|found| found.name == volume.name.as_str())
             {
                 None => {
@@ -834,7 +837,11 @@ impl Plan {
                         ActionReason::Missing,
                     ));
                 }
-                Some(found) if !found.is_owned_by(&desired.instance_id, &desired.id) => {
+                Some(found)
+                    if !volume
+                        .owner()
+                        .is_some_and(|owner| found.is_owned_by(&desired.instance_id, &owner)) =>
+                {
                     ready = false;
                     self.collision(volume.name.as_str(), blocked);
                 }

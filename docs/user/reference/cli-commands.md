@@ -84,6 +84,7 @@ Commands:
 - [`piquelctl app`](#piquelctl-app): Create, inspect, edit and deploy applications.
 - [`piquelctl env`](#piquelctl-env): Create, inspect, deploy and delete an application's environments.
 - [`piquelctl preview`](#piquelctl-preview): Create, inspect, deploy and delete previews: disposable deployments of a branch.
+- [`piquelctl volume`](#piquelctl-volume): List the volumes the daemon tracks, and attach or delete the detached volumes deleted environments leave.
 - [`piquelctl build`](#piquelctl-build): Inspect Git source builds and job runs, and read their output.
 - [`piquelctl operation`](#piquelctl-operation): Show an operation, waiting until it ends.
 - [`piquelctl analytics`](#piquelctl-analytics): Summarize deployment outcomes, retries, durations, and failure codes over a time window, for every readable application or one environment.
@@ -123,8 +124,8 @@ Options:
   - `apps:exec`: Run commands in running containers, which can read secret values.
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
-  - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key and retry notifications.
+  - `system:read`: Read daemon configuration, resources, volumes, history and notifications.
+  - `system:operate`: Recover the secret key, retry notifications, and attach and delete detached volumes.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -216,8 +217,8 @@ Options:
   - `apps:exec`: Run commands in running containers, which can read secret values.
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
-  - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key and retry notifications.
+  - `system:read`: Read daemon configuration, resources, volumes, history and notifications.
+  - `system:operate`: Recover the secret key, retry notifications, and attach and delete detached volumes.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -259,8 +260,8 @@ Options:
   - `apps:exec`: Run commands in running containers, which can read secret values.
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
-  - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key and retry notifications.
+  - `system:read`: Read daemon configuration, resources, volumes, history and notifications.
+  - `system:operate`: Recover the secret key, retry notifications, and attach and delete detached volumes.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -476,8 +477,8 @@ Options:
   - `apps:exec`: Run commands in running containers, which can read secret values.
   - `events:read`: Read history, diagnostics and analytics.
   - `apps:create`: Create applications.
-  - `system:read`: Read daemon configuration, resources, history and notifications.
-  - `system:operate`: Recover the secret key and retry notifications.
+  - `system:read`: Read daemon configuration, resources, volumes, history and notifications.
+  - `system:operate`: Recover the secret key, retry notifications, and attach and delete detached volumes.
   - `accounts:manage`: Manage accounts with equal or less access, and invitations.
   - `audit:read`: Read every account's audit trail.
   - `telemetry:grant`: Grant environments every application's telemetry.
@@ -4064,6 +4065,89 @@ Options:
 - `--branch-gone`: Select the previews whose branch no longer exists. Required.
 - `-y, --yes`: Skip the confirmation prompt. You need it when not on a terminal.
 - `--no-wait`: Return once the daemon accepts the deletion, without waiting for it to finish.
+
+## `piquelctl volume`
+
+List the volumes the daemon tracks, and attach or delete the detached volumes deleted environments leave.
+
+```text
+piquelctl volume [OPTIONS] <COMMAND>
+```
+
+Commands:
+
+- [`piquelctl volume list`](#piquelctl-volume-list): List volumes with their state and size.
+- [`piquelctl volume show`](#piquelctl-volume-show): Show one volume: its Docker name, state, size, and where it is bound or was bound when it was detached.
+- [`piquelctl volume attach`](#piquelctl-volume-attach): Attach a detached volume to an environment under a volume name.
+- [`piquelctl volume delete`](#piquelctl-volume-delete): Delete a detached volume and its data.
+
+## `piquelctl volume list`
+
+List volumes with their state and size.
+
+With an application, lists the volumes its environments bind, or with an environment, that environment's (needs `apps:read`). Without one, lists every volume (needs `system:read`). Sizes are measured every 15 minutes.
+
+```text
+piquelctl volume list [OPTIONS] [APPLICATION] [ENVIRONMENT]
+```
+
+Arguments:
+
+- `[APPLICATION]`: Application name or stable ID.
+- `[ENVIRONMENT]`: Environment name or stable ID.
+
+Options:
+
+- `--detached`: Only list detached volumes, which no environment binds, such as those of deleted environments.
+
+## `piquelctl volume show`
+
+Show one volume: its Docker name, state, size, and where it is bound or was bound when it was detached.
+
+Needs `system:read`.
+
+```text
+piquelctl volume show [OPTIONS] <VOLUME>
+```
+
+Arguments:
+
+- `<VOLUME>`: Volume ID, from `volume list`.
+
+## `piquelctl volume attach`
+
+Attach a detached volume to an environment under a volume name.
+
+The environment mounts it where its manifest mounts NAME, from its next deployment. NAME must not be bound yet: attach the volume before the first deployment that declares it. An environment that deploys the saved manifest needs it to declare NAME. Previews delete their volumes, so they neither take nor give one. Needs `apps:write` on the application and `system:operate`.
+
+```text
+piquelctl volume attach [OPTIONS] <APPLICATION> <ENVIRONMENT> <NAME> <VOLUME>
+```
+
+Arguments:
+
+- `<APPLICATION>`: Application name or stable ID.
+- `<ENVIRONMENT>`: Environment name or stable ID.
+- `<NAME>`: The manifest volume name to bind.
+- `<VOLUME>`: Detached volume ID, from `volume list --detached`.
+
+## `piquelctl volume delete`
+
+Delete a detached volume and its data.
+
+Attached volumes can't be deleted. Needs `system:operate`.
+
+```text
+piquelctl volume delete [OPTIONS] <VOLUME>
+```
+
+Arguments:
+
+- `<VOLUME>`: Volume ID, from `volume list --detached`.
+
+Options:
+
+- `-y, --yes`: Skip the confirmation prompt.
 
 ## `piquelctl build`
 

@@ -5,7 +5,7 @@
 //! `[previews]` counts checked in the creating transaction.
 use super::{
     ApplicationState, Operation, ResolvedApplication, Store, StoreError, StoredApplication,
-    StoredEnvironment, now_ms,
+    StoredEnvironment,
 };
 use piqueld_core::EventKind;
 use piqueld_core::{
@@ -290,44 +290,6 @@ impl Store {
             origin = decode(&json)?;
         }
         Ok(Some(origin))
-    }
-
-    /// Adds the Docker volumes of a preview's prepared target to its
-    /// inventory, before any of them is created.
-    pub(super) async fn record_preview_volumes_on(
-        tx: &mut Transaction<'_, Sqlite>,
-        resolved: &ResolvedApplication,
-    ) -> Result<(), StoreError> {
-        let (id, now) = (resolved.id.as_str(), now_ms());
-        for volume in &resolved.volumes {
-            let name = volume.name.as_str();
-            sqlx::query!(
-                "INSERT INTO preview_volumes(environment_id,name,created_at_ms) VALUES(?1,?2,?3) ON CONFLICT DO NOTHING",
-                id,
-                name,
-                now
-            )
-            .execute(&mut **tx)
-            .await
-            .map_err(StoreError::database)?;
-        }
-        Ok(())
-    }
-
-    /// Every Docker volume a preview's deployments created, including
-    /// volumes later manifests dropped.
-    ///
-    /// # Errors
-    /// Returns a storage error.
-    pub async fn preview_volumes(&self, id: &EnvironmentId) -> Result<Vec<String>, StoreError> {
-        let id = id.as_str();
-        sqlx::query_scalar!(
-            "SELECT name FROM preview_volumes WHERE environment_id=?1 ORDER BY name",
-            id
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(StoreError::database)
     }
 
     /// How `[previews]` bounded a preview's current target: the default

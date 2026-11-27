@@ -77,6 +77,7 @@ fn observed(desired: &ResolvedApplication) -> ObservedApplication {
                 labels: volume.labels.clone(),
             })
             .collect(),
+        other_volumes: Vec::new(),
         services: desired
             .services
             .iter()

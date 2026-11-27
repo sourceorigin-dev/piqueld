@@ -270,6 +270,7 @@ impl Store {
         .fetch_optional(&mut *tx)
         .await
         .map_err(StoreError::database)?;
+        Self::detach_volumes_on(&mut tx, app_id).await?;
         sqlx::query!(
             "DELETE FROM environments WHERE id=?1 AND delete_intent=1",
             app_id

@@ -527,7 +527,8 @@ stopped: [delete them](previews.md#delete-a-preview) instead.
 ## Delete an environment
 
 Deleting an environment removes its services, secrets and deployment
-history. Its named volumes are kept, with their data. If the manifest
+history. Its volumes are [detached](volumes-and-files.md#what-happens-to-volume-data),
+with their data. If the manifest
 declares the environment, remove its block and save the manifest first.
 
 In the dashboard, select **Delete environment**, at the bottom of the

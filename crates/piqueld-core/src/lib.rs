@@ -43,7 +43,8 @@ pub use environment::{EnvironmentKind, EnvironmentSource, Preview, PromotedFrom,
 pub use event::{Event, EventActor, EventDetail, EventKind};
 pub use identity::{
     ApplicationId, ApplicationIdError, EnvironmentId, EnvironmentIdError, ReleaseId,
-    ReleaseIdError, ResourceKind, docker_resource_name, docker_resource_readable_prefix,
+    ReleaseIdError, ResourceKind, VolumeId, VolumeIdError, docker_resource_name,
+    docker_resource_readable_prefix,
 };
 pub use images::{
     BuiltImage, ImageReference, ImageReferenceError, ImmutableImage, ImmutableImageError,
@@ -55,7 +56,8 @@ pub use manifest::{
 };
 pub use names::{
     ApplicationName, EnvironmentName, EnvironmentNameError, GitBranch, GitBranchError, JobName,
-    PreviewSlot, PreviewSlotError, PreviewSlug, RouteName, ServiceName, VolumeName, is_request_id,
+    PreviewSlot, PreviewSlotError, PreviewSlug, RouteName, ServiceName, VolumeName,
+    VolumeNameError, is_request_id,
 };
 pub use operation::{ApplicationState, Operation, OperationKind, OperationState, Phase};
 pub(crate) use planner::ActionReason;

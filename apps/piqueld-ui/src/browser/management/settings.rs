@@ -519,7 +519,7 @@ pub(super) fn VolumeSettings() -> impl IntoView {
                 <div>
                     <h3>"Named volumes"</h3>
                     <p>
-                        "Volumes persist across deployments. Mount them from a service’s Volume mounts tab. Removing a volume here keeps its Docker data."
+                        "Volumes persist across deployments. Mount them from a service’s Volume mounts tab. Removing a volume here keeps its data, still bound to the name in each environment."
                     </p>
                 </div>
                 {dialog.add_button("Add volume", || false)}

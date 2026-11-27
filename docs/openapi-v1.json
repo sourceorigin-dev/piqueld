@@ -491,6 +491,7 @@
           "exec_request_timeout",
           "application_id_invalid",
           "environment_id_invalid",
+          "volume_id_invalid",
           "preview_slot_invalid",
           "destination_name_invalid",
           "revision_invalid",
@@ -533,6 +534,10 @@
           "secrets_unavailable",
           "deployment_not_restorable",
           "restore_secrets_unavailable",
+          "volume_name_bound",
+          "volume_attached",
+          "volume_preview",
+          "volume_name_undeclared",
           "hostname_conflict",
           "field_resource_not_found",
           "field_resource_exists",
@@ -1162,6 +1167,20 @@
         },
         "required": [
           "manifest"
+        ],
+        "type": "object"
+      },
+      "AttachVolumeRequest": {
+        "additionalProperties": false,
+        "description": "Attaches a detached volume to an environment under a manifest volume\nname that is not bound yet.",
+        "properties": {
+          "volume": {
+            "$ref": "#/components/schemas/VolumeId",
+            "description": "The detached volume to attach."
+          }
+        },
+        "required": [
+          "volume"
         ],
         "type": "object"
       },
@@ -3130,7 +3149,7 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "Expected ownership labels.",
+            "description": "Expected ownership labels: those of the environment that created the\nvolume, which may since have been attached to another one.",
             "type": "object"
           },
           "logical_name": {
@@ -3139,7 +3158,7 @@
           },
           "name": {
             "$ref": "#/components/schemas/DockerVolumeName",
-            "description": "Canonical Docker resource name."
+            "description": "Docker name of the volume the environment binds the name to."
           }
         },
         "required": [
@@ -3232,6 +3251,43 @@
         },
         "required": [
           "delivered"
+        ],
+        "type": "object"
+      },
+      "DetachedFrom": {
+        "description": "Where a detached volume was bound when its environment was deleted, by\nname, since the environment no longer exists.",
+        "properties": {
+          "application": {
+            "$ref": "#/components/schemas/ApplicationName",
+            "description": "The application's name."
+          },
+          "environment": {
+            "$ref": "#/components/schemas/EnvironmentName",
+            "description": "The environment's name."
+          },
+          "name": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/VolumeName"
+                  }
+                ],
+                "description": "The manifest volume name, unless only the environment is known."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "application",
+          "environment"
         ],
         "type": "object"
       },
@@ -4779,6 +4835,14 @@
                 "description": "The URL of every route the current runtime target renders, and\nwhether each is ready; see [`RouteUrl::derive`]. Absent from daemons\nthat predate URL readiness, which is not the same as no routes.",
                 "items": {
                   "$ref": "#/components/schemas/RouteUrl"
+                },
+                "nullable": true,
+                "type": "array"
+              },
+              "volumes": {
+                "description": "The volumes it binds its manifest volume names to. Absent from\ndaemons that predate tracked volumes.",
+                "items": {
+                  "$ref": "#/components/schemas/VolumeView"
                 },
                 "nullable": true,
                 "type": "array"
@@ -7144,6 +7208,197 @@
         ],
         "type": "object"
       },
+      "Envelope_Vec_VolumeView": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "items": {
+              "description": "A Docker volume the daemon tracks. An environment binds each of its\nmanifest volume names to one, so a name can later point at another\nvolume without touching the data of the first.",
+              "properties": {
+                "binding": {
+                  "oneOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/VolumeBinding"
+                        }
+                      ],
+                      "description": "The environment and name it is bound to, while attached."
+                    },
+                    {
+                      "enum": [
+                        null
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  ]
+                },
+                "created_at_ms": {
+                  "description": "When the daemon created or adopted it, in Unix milliseconds.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "detached_from": {
+                  "oneOf": [
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/DetachedFrom"
+                        }
+                      ],
+                      "description": "Where it was bound when its environment was deleted, while detached,\nif known. Volumes adopted from Docker after their environment was\ndeleted have none."
+                    },
+                    {
+                      "enum": [
+                        null
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  ]
+                },
+                "docker_name": {
+                  "$ref": "#/components/schemas/DockerVolumeName",
+                  "description": "Its Docker name: derived from its ID, or for volumes created before\nvolumes were tracked, from its first environment and name."
+                },
+                "id": {
+                  "$ref": "#/components/schemas/VolumeId",
+                  "description": "Stable volume identifier."
+                },
+                "measured_at_ms": {
+                  "description": "When its size was last measured, in Unix milliseconds.",
+                  "format": "int64",
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "pool": {
+                  "$ref": "#/components/schemas/VolumePool",
+                  "description": "Where it lives."
+                },
+                "size_bytes": {
+                  "description": "Disk space it used when last measured, in bytes, if Docker could\nmeasure it.",
+                  "format": "int64",
+                  "minimum": 0,
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "state": {
+                  "$ref": "#/components/schemas/VolumeState",
+                  "description": "Whether an environment binds a name to it."
+                }
+              },
+              "required": [
+                "id",
+                "docker_name",
+                "pool",
+                "state",
+                "created_at_ms"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "Envelope_VolumeView": {
+        "description": "Successful API response envelope.",
+        "properties": {
+          "data": {
+            "description": "A Docker volume the daemon tracks. An environment binds each of its\nmanifest volume names to one, so a name can later point at another\nvolume without touching the data of the first.",
+            "properties": {
+              "binding": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/VolumeBinding"
+                      }
+                    ],
+                    "description": "The environment and name it is bound to, while attached."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              },
+              "created_at_ms": {
+                "description": "When the daemon created or adopted it, in Unix milliseconds.",
+                "format": "int64",
+                "type": "integer"
+              },
+              "detached_from": {
+                "oneOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/DetachedFrom"
+                      }
+                    ],
+                    "description": "Where it was bound when its environment was deleted, while detached,\nif known. Volumes adopted from Docker after their environment was\ndeleted have none."
+                  },
+                  {
+                    "enum": [
+                      null
+                    ],
+                    "nullable": true,
+                    "type": "string"
+                  }
+                ]
+              },
+              "docker_name": {
+                "$ref": "#/components/schemas/DockerVolumeName",
+                "description": "Its Docker name: derived from its ID, or for volumes created before\nvolumes were tracked, from its first environment and name."
+              },
+              "id": {
+                "$ref": "#/components/schemas/VolumeId",
+                "description": "Stable volume identifier."
+              },
+              "measured_at_ms": {
+                "description": "When its size was last measured, in Unix milliseconds.",
+                "format": "int64",
+                "nullable": true,
+                "type": "integer"
+              },
+              "pool": {
+                "$ref": "#/components/schemas/VolumePool",
+                "description": "Where it lives."
+              },
+              "size_bytes": {
+                "description": "Disk space it used when last measured, in bytes, if Docker could\nmeasure it.",
+                "format": "int64",
+                "minimum": 0,
+                "nullable": true,
+                "type": "integer"
+              },
+              "state": {
+                "$ref": "#/components/schemas/VolumeState",
+                "description": "Whether an environment binds a name to it."
+              }
+            },
+            "required": [
+              "id",
+              "docker_name",
+              "pool",
+              "state",
+              "created_at_ms"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "Envelope_WebhookSecret": {
         "description": "Successful API response envelope.",
         "properties": {
@@ -7573,6 +7828,14 @@
             "description": "The URL of every route the current runtime target renders, and\nwhether each is ready; see [`RouteUrl::derive`]. Absent from daemons\nthat predate URL readiness, which is not the same as no routes.",
             "items": {
               "$ref": "#/components/schemas/RouteUrl"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "volumes": {
+            "description": "The volumes it binds its manifest volume names to. Absent from\ndaemons that predate tracked volumes.",
+            "items": {
+              "$ref": "#/components/schemas/VolumeView"
             },
             "nullable": true,
             "type": "array"
@@ -14901,9 +15164,146 @@
         ],
         "type": "object"
       },
+      "VolumeBinding": {
+        "description": "The environment and manifest volume name an attached volume is bound to.",
+        "properties": {
+          "application": {
+            "$ref": "#/components/schemas/ApplicationName",
+            "description": "Its name."
+          },
+          "application_id": {
+            "$ref": "#/components/schemas/ApplicationId",
+            "description": "The application the environment belongs to."
+          },
+          "environment": {
+            "$ref": "#/components/schemas/EnvironmentName",
+            "description": "Its name."
+          },
+          "environment_id": {
+            "$ref": "#/components/schemas/EnvironmentId",
+            "description": "The environment."
+          },
+          "name": {
+            "$ref": "#/components/schemas/VolumeName",
+            "description": "The manifest volume name bound to the volume."
+          }
+        },
+        "required": [
+          "application_id",
+          "application",
+          "environment_id",
+          "environment",
+          "name"
+        ],
+        "type": "object"
+      },
+      "VolumeId": {
+        "description": "Stable volume identity, assigned by persistence as `volume-…`. An\nenvironment binds each manifest volume name to one; volumes created\nsince volumes were tracked take their Docker name from it, so it is\nshort enough to fit one after `piqueld-`.",
+        "type": "string"
+      },
       "VolumeName": {
         "description": "Logical volume name, including references from service mounts.",
         "type": "string"
+      },
+      "VolumePool": {
+        "description": "Where a volume lives.",
+        "enum": [
+          "local"
+        ],
+        "type": "string"
+      },
+      "VolumeState": {
+        "description": "Whether an environment uses a volume.",
+        "enum": [
+          "attached",
+          "detached"
+        ],
+        "type": "string"
+      },
+      "VolumeView": {
+        "description": "A Docker volume the daemon tracks. An environment binds each of its\nmanifest volume names to one, so a name can later point at another\nvolume without touching the data of the first.",
+        "properties": {
+          "binding": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/VolumeBinding"
+                  }
+                ],
+                "description": "The environment and name it is bound to, while attached."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          },
+          "created_at_ms": {
+            "description": "When the daemon created or adopted it, in Unix milliseconds.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "detached_from": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DetachedFrom"
+                  }
+                ],
+                "description": "Where it was bound when its environment was deleted, while detached,\nif known. Volumes adopted from Docker after their environment was\ndeleted have none."
+              },
+              {
+                "enum": [
+                  null
+                ],
+                "nullable": true,
+                "type": "string"
+              }
+            ]
+          },
+          "docker_name": {
+            "$ref": "#/components/schemas/DockerVolumeName",
+            "description": "Its Docker name: derived from its ID, or for volumes created before\nvolumes were tracked, from its first environment and name."
+          },
+          "id": {
+            "$ref": "#/components/schemas/VolumeId",
+            "description": "Stable volume identifier."
+          },
+          "measured_at_ms": {
+            "description": "When its size was last measured, in Unix milliseconds.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "pool": {
+            "$ref": "#/components/schemas/VolumePool",
+            "description": "Where it lives."
+          },
+          "size_bytes": {
+            "description": "Disk space it used when last measured, in bytes, if Docker could\nmeasure it.",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/VolumeState",
+            "description": "Whether an environment binds a name to it."
+          }
+        },
+        "required": [
+          "id",
+          "docker_name",
+          "pool",
+          "state",
+          "created_at_ms"
+        ],
+        "type": "object"
       },
       "VolumesValue": {
         "additionalProperties": false,
@@ -14976,7 +15376,7 @@
     }
   },
   "info": {
-    "description": "piqueld control-plane API. Mutation responses identify durable operations; named volumes are retained on deletion.",
+    "description": "piqueld control-plane API. Mutation responses identify durable operations; deleting an environment detaches its volumes and keeps them.",
     "license": {
       "name": "Apache-2.0"
     },
@@ -15795,7 +16195,7 @@
             "description": "Structured, sanitized error"
           }
         },
-        "summary": "Delete an application with its environments, retaining their volumes, and its previews",
+        "summary": "Delete an application with its environments, detaching their volumes, and its previews",
         "x-piqueld-access": "apps:delete"
       },
       "get": {
@@ -29484,7 +29884,7 @@
             "description": "Structured, sanitized error"
           }
         },
-        "summary": "Delete an environment's services and networks, retaining volumes",
+        "summary": "Delete an environment's services and networks, detaching its volumes",
         "x-piqueld-access": "apps:delete"
       },
       "get": {
@@ -32290,6 +32690,213 @@
         "x-piqueld-access": "logs:read"
       }
     },
+    "/api/v1/environments/{id}/volumes": {
+      "get": {
+        "operationId": "listEnvironmentVolumes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Vec_VolumeView"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Lists the volumes an environment binds its manifest volume names to.",
+        "x-piqueld-access": "apps:read"
+      }
+    },
+    "/api/v1/environments/{id}/volumes/{name}": {
+      "put": {
+        "description": "The environment mounts it from its next deployment. Needs `apps:write` on\nits application and `system:operate`, since the volume may hold another\napplication's data. For an environment deploying the saved manifest, a\nname that manifest doesn't declare fails with 409\n`volume_name_undeclared`. A name the environment already binds fails with\n`volume_name_bound`, an attached volume with `volume_attached`, and a\npreview, or a live preview's volume, with `volume_preview`.",
+        "operationId": "attachVolume",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachVolumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_VolumeView"
+                }
+              }
+            },
+            "description": "Volume attached"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "The request body stopped arriving"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Attaches a detached volume to an environment under a volume name.",
+        "x-piqueld-access": "apps:write"
+      }
+    },
     "/api/v1/events": {
       "get": {
         "description": "Oldest first unless `descending=true`. Follow `next_cursor` to load more.",
@@ -34093,6 +34700,253 @@
         },
         "summary": "Get daemon status",
         "x-piqueld-access": "authenticated"
+      }
+    },
+    "/api/v1/volumes": {
+      "get": {
+        "operationId": "listVolumes",
+        "parameters": [
+          {
+            "description": "Only detached volumes, which no environment binds.",
+            "in": "query",
+            "name": "detached",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_Vec_VolumeView"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Lists every volume, attached ones first, or only detached ones.",
+        "x-piqueld-access": "system:read"
+      }
+    },
+    "/api/v1/volumes/{volume}": {
+      "delete": {
+        "description": "Attached volumes fail with 409 `volume_attached`. If Docker can't remove\nit, the volume is kept, and deleting it again retries.",
+        "operationId": "deleteVolume",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "volume",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_bool"
+                }
+              }
+            },
+            "description": "Volume deleted"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Deletes a detached volume and its data.",
+        "x-piqueld-access": "system:operate"
+      },
+      "get": {
+        "operationId": "getVolume",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "volume",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_VolumeView"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "TCP authority or browser origin is not trusted"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Structured, sanitized error"
+          }
+        },
+        "summary": "Gets one volume.",
+        "x-piqueld-access": "system:read"
       }
     }
   },

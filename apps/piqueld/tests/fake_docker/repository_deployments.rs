@@ -488,11 +488,14 @@ async fn deleting_a_preview_removes_every_volume_it_ever_created() {
         deployed.expect("the deployed operation is present").state,
         OperationState::Succeeded
     );
-    let inventory = harness
+    let inventory: Vec<String> = harness
         .store
         .preview_volumes(&preview)
         .await
-        .expect("preview volumes succeeds");
+        .expect("preview volumes succeeds")
+        .into_iter()
+        .map(|volume| volume.docker_name.to_string())
+        .collect();
     assert_eq!(inventory.len(), 2);
     assert!(inventory.iter().all(|name| !before.contains(name)));
     let current = volumes().await;

@@ -442,7 +442,7 @@ fn validate_checks_manifests_without_a_daemon_or_profiles() {
 }
 
 #[test]
-fn delete_reports_named_volume_retention_and_operation_completion() {
+fn delete_reports_detached_volumes_and_operation_completion() {
     let mut deleting = false;
     let server = start_server(false, 4, move |request| match request.path.as_str() {
         "/api/v1/applications?name=notes" => {
@@ -464,7 +464,7 @@ fn delete_reports_named_volume_retention_and_operation_completion() {
     let output = run(&server, &["app", "delete", "notes", "--yes"]);
     let value = assert_json_success(&output);
     assert_eq!(value["volumes_retained"], true);
-    assert!(String::from_utf8_lossy(&output.stderr).contains("named volumes are retained"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("volumes are detached and kept"));
     let _ = server.finish();
 }
 

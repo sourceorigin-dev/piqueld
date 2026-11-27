@@ -214,7 +214,8 @@ report!(OperationOutcomeReport<'_>, self, out, {
 });
 
 /// Environment or preview deletion result. `outcome` is present only after
-/// waiting. Environments retain their volumes; previews remove theirs.
+/// waiting. Environments detach their volumes, keeping them; previews
+/// remove theirs.
 #[derive(Serialize)]
 pub(crate) struct DeletionReport<'a> {
     /// The deletion operation the daemon accepted.
@@ -250,7 +251,7 @@ impl<'a> DeletionReport<'a> {
 }
 report!(DeletionReport<'_>, self, out, {
     let (noun, volumes) = match (self.volumes_retained, self.outcome) {
-        (true, _) => ("Environment", "named volumes retained"),
+        (true, _) => ("Environment", "its volumes detached and kept"),
         (false, Some(_)) => ("Preview", "its volumes removed"),
         (false, None) => ("Preview", "its volumes will be removed"),
     };
@@ -268,7 +269,7 @@ report!(DeletionReport<'_>, self, out, {
 });
 
 /// Application deletion result. `outcome` is present only after waiting;
-/// environments retain their volumes, previews remove theirs.
+/// environments detach their volumes, keeping them; previews remove theirs.
 #[derive(Serialize)]
 pub(crate) struct ApplicationDeletionReport<'a> {
     /// The application that was deleted.
@@ -276,8 +277,8 @@ pub(crate) struct ApplicationDeletionReport<'a> {
     /// `Some("deleted")` once the application is gone; omitted with `--no-wait`.
     #[serde(skip_serializing_if = "Option::is_none")]
     outcome: Option<&'static str>,
-    /// Always true: environments' named volumes are retained. Previews' volumes
-    /// are removed regardless.
+    /// Always true: environments' volumes are detached and kept. Previews'
+    /// volumes are removed regardless.
     volumes_retained: bool,
 }
 impl<'a> ApplicationDeletionReport<'a> {
@@ -300,13 +301,13 @@ impl<'a> ApplicationDeletionReport<'a> {
 report!(ApplicationDeletionReport<'_>, self, out, {
     if self.outcome.is_some() {
         return out.line(format_args!(
-            "Application {} deleted (environments' named volumes retained)",
+            "Application {} deleted (environments' volumes detached and kept)",
             self.deleted.application_id
         ));
     }
     for operation in &self.deleted.operations {
         out.line(format_args!(
-            "Accepted operation {} for {} (environments' named volumes retained)",
+            "Accepted operation {} for {} (environments' volumes detached and kept)",
             operation.operation_id, operation.environment_id
         ))?;
     }

@@ -3,12 +3,12 @@
 use super::{
     BTreeMap, BTreeSet, BollardDocker, BollardResult, DesiredNetwork, DesiredService,
     DesiredVolume, DockerApi, DockerError, DockerNetworkName, DockerTimeout, EnvironmentId,
-    HashMap, InspectNetworkOptions, InspectServiceOptions, Ipam, ListNetworksOptionsBuilder,
-    ListServicesOptionsBuilder, ListTasksOptionsBuilder, ListVolumesOptionsBuilder,
-    NetworkCreateRequest, OBSERVATION_INSPECT_CONCURRENCY, ObservedApplication, ObservedNetwork,
-    ObservedService, ObservedVolume, ResourceKind, StreamExt, SwarmInitRequest, SwarmState,
-    TryStreamExt, VolumeCreateOptions, async_trait, identity::Filters, resolve_image_digest,
-    stream,
+    HashMap, INSTANCE_LABEL, InspectNetworkOptions, InspectServiceOptions, Ipam,
+    ListNetworksOptionsBuilder, ListServicesOptionsBuilder, ListTasksOptionsBuilder,
+    ListVolumesOptionsBuilder, MANAGED_LABEL, ManagedVolume, NetworkCreateRequest,
+    OBSERVATION_INSPECT_CONCURRENCY, ObservedApplication, ObservedNetwork, ObservedService,
+    ObservedVolume, ResourceKind, StreamExt, SwarmInitRequest, SwarmState, TryStreamExt,
+    VolumeCreateOptions, async_trait, identity::Filters, resolve_image_digest, stream,
 };
 use piqueld_core::wait;
 
@@ -204,17 +204,24 @@ impl BollardDocker {
         })
     }
 
-    /// Lists candidate volumes (see [`Self::candidate_listings`]) and keeps
-    /// those `relevant` to the application.
+    /// Lists every volume piqueld manages, and those named like the
+    /// application's (see [`Self::relevant`]), returning those relevant to
+    /// it and the others piqueld manages, one of which it may have attached.
     ///
     /// Volumes are observed from the list responses without further inspection.
     async fn snapshot_volumes(
         &self,
         application: &EnvironmentId,
-    ) -> Result<Vec<ObservedVolume>, DockerError> {
+    ) -> Result<(Vec<ObservedVolume>, Vec<ObservedVolume>), DockerError> {
         let client = self.client()?;
         let volumes = Self::list_unique(
-            Self::candidate_listings(application, ["list volumes", "list volumes by name"]),
+            [
+                ("list volumes", Self::managed_filter()),
+                (
+                    "list volumes by name",
+                    Self::application_name_filter(application),
+                ),
+            ],
             |filters| async move {
                 client
                     .list_volumes(Some(
@@ -238,8 +245,7 @@ impl BollardDocker {
                     labels: volume.labels.into_iter().collect(),
                 }
             })
-            .filter(|r| Self::relevant(&r.name, &r.labels, application))
-            .collect())
+            .partition(|volume| Self::relevant(&volume.name, &volume.labels, application)))
     }
 
     /// Lists candidate services (see [`Self::candidate_listings`]), then
@@ -769,13 +775,14 @@ impl DockerApi for BollardDocker {
             .run("observe application", async {
                 let node_id = self.local_node_id().await?;
                 let networks = self.snapshot_networks(application).await?;
-                let volumes = self.snapshot_volumes(application).await?;
+                let (volumes, other_volumes) = self.snapshot_volumes(application).await?;
                 let services = self
                     .snapshot_services(application, &networks, &node_id)
                     .await?;
                 Ok(ObservedApplication {
                     networks: networks.observed,
                     volumes,
+                    other_volumes,
                     services,
                     linked_networks: networks.linked,
                 })
@@ -1143,6 +1150,65 @@ impl DockerApi for BollardDocker {
                     .found()
                     .map_err(DockerError::delete_network)?;
                 Ok(())
+            })
+            .await
+    }
+
+    async fn volumes(
+        &self,
+        instance: &piqueld_core::InstanceId,
+    ) -> Result<Vec<ManagedVolume>, DockerError> {
+        DockerTimeout::Request
+            .run("list managed volumes", async {
+                let listed = self
+                    .client()?
+                    .list_volumes(Some(
+                        ListVolumesOptionsBuilder::default()
+                            .filters(&Self::label_filter(vec![
+                                format!("{MANAGED_LABEL}=true"),
+                                format!("{INSTANCE_LABEL}={instance}"),
+                            ]))
+                            .build(),
+                    ))
+                    .await
+                    .or_request("list managed volumes")?
+                    .volumes
+                    .ok_or(DockerError::Request("list managed volumes"))?;
+                Ok(listed
+                    .into_iter()
+                    .filter_map(|volume| {
+                        let labels = volume.labels.into_iter().collect();
+                        ManagedVolume::of(&volume.name, &labels, instance)
+                    })
+                    .collect())
+            })
+            .await
+    }
+
+    async fn volume_sizes(&self) -> Result<BTreeMap<String, u64>, DockerError> {
+        let timeout = DockerTimeout::Measurement;
+        timeout
+            .run("measure volumes", async {
+                let usage = self
+                    .client()?
+                    .clone()
+                    .with_timeout(timeout.duration())
+                    .df(Some(
+                        bollard::query_parameters::DataUsageOptionsBuilder::new()
+                            ._type(vec!["volume".to_owned()])
+                            .build(),
+                    ))
+                    .await
+                    .or_request("measure volumes")?;
+                Ok(usage
+                    .volumes
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|volume| {
+                        let size = u64::try_from(volume.usage_data?.size).ok()?;
+                        Some((volume.name, size))
+                    })
+                    .collect())
             })
             .await
     }

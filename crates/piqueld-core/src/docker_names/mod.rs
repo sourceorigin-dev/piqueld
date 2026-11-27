@@ -3,7 +3,9 @@
 use crate::manifest::FileMode;
 use crate::names::validated_string;
 use crate::resource::LINK_LABEL;
-use crate::{EnvironmentId, JobName, ResourceKind, ServiceName, VolumeName, docker_resource_name};
+use crate::{
+    EnvironmentId, JobName, ResourceKind, ServiceName, VolumeId, VolumeName, docker_resource_name,
+};
 use std::collections::BTreeMap;
 
 validated_string!(
@@ -130,7 +132,16 @@ impl DockerServiceName {
 }
 
 impl DockerVolumeName {
-    /// Derives a volume name from stable application and logical volume identity.
+    /// Names a volume after its ID, as every volume created since volumes
+    /// were tracked is named: `piqueld-volume-…`.
+    #[must_use]
+    pub fn for_id(id: &VolumeId) -> Self {
+        Self(format!("piqueld-{id}"))
+    }
+
+    /// The name volumes created before volumes were tracked have: derived
+    /// from the environment and the manifest volume name. Compiling a target
+    /// still uses it until saving binds each name to its volume.
     #[must_use]
     pub fn for_volume(id: &EnvironmentId, volume: &VolumeName) -> Self {
         Self(docker_resource_name(

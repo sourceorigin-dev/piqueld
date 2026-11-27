@@ -299,6 +299,10 @@ pub struct EnvironmentDetailView {
     /// predate telemetry receivers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryReport>,
+    /// The volumes it binds its manifest volume names to. Absent from
+    /// daemons that predate tracked volumes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volumes: Option<Vec<super::VolumeView>>,
 }
 
 impl EnvironmentDetailView {

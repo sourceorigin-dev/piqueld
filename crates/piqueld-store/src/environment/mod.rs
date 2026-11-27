@@ -12,8 +12,7 @@ use super::{
 use crate::SourceChoice;
 use piqueld_core::EventKind;
 use piqueld_core::{
-    EnvironmentKind, EnvironmentName, EnvironmentSource, PromotedFrom, TrackedBranch,
-    manifest::RenderTarget,
+    EnvironmentName, EnvironmentSource, PromotedFrom, TrackedBranch, manifest::RenderTarget,
 };
 use sqlx::{Sqlite, SqliteConnection, Transaction};
 
@@ -482,9 +481,9 @@ impl Store {
     /// Publishes a completely resolved target only while its operation is current.
     /// Stores the target on the running, latest operation, records any fetched
     /// repository manifest as the environment's own and the release the target
-    /// runs, adds a preview's volumes to its inventory before they exist, and
-    /// records `target_resolved`. Binds the applications its links name
-    /// first, and returns the target as saved.
+    /// runs, and records `target_resolved`. Binds the applications its links
+    /// name and its volume names first, recording new volumes before they
+    /// exist, and returns the target as saved.
     /// # Errors
     /// Returns storage errors or `IllegalTransition` for obsolete preparation.
     pub async fn save_prepared(
@@ -495,6 +494,7 @@ impl Store {
         let (_writer, mut tx) = self.begin_immediate().await?;
         let mut resolved = resolved.clone();
         Box::pin(Self::bind_links_on(&mut tx, &mut resolved)).await?;
+        Self::bind_volumes_on(&mut tx, &mut resolved).await?;
         let resolved = &resolved;
         let json = serde_json::to_string(resolved).map_err(StoreError::corrupt)?;
         let changed=sqlx::query!("UPDATE operations SET target_json=?1 WHERE id=?2 AND state='running' AND id=(SELECT latest.id FROM operations latest WHERE latest.environment_id=operations.environment_id ORDER BY latest.created_at_ms DESC,latest.id DESC LIMIT 1)",json,operation.id).execute(&mut *tx).await.map_err(StoreError::database)?.rows_affected();
@@ -509,9 +509,6 @@ impl Store {
         .environment
         .kind;
         Self::accept_deployment_on(&mut tx, operation, &kind).await?;
-        if let EnvironmentKind::Preview(_) = kind {
-            Self::record_preview_volumes_on(&mut tx, resolved).await?;
-        }
         let now = now_ms();
         Self::record_release_on(
             &mut tx,

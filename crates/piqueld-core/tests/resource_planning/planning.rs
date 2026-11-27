@@ -5,7 +5,8 @@ use piqueld_core::planner::{ActionKind, DiagnosticSeverity, PlanRequest};
 use piqueld_core::resource::{
     Convergence, ObservedApplication, RuntimeMessage, TaskDiagnostic, compile_application,
 };
-use piqueld_core::{ApplicationId, Plan, parse_toml};
+use piqueld_core::{ApplicationId, EnvironmentId, Plan, parse_toml};
+use std::collections::BTreeMap;
 
 use super::{application, environment, instance, observed, resolutions};
 
@@ -377,4 +378,35 @@ fn cleanup_plans_are_stable_across_engine_listing_order() {
                     && action.kind.resource_name() == "unmanaged-network")
         );
     }
+}
+
+#[test]
+fn a_volume_attached_from_another_environment_is_owned_by_its_creator() {
+    let mut desired =
+        compile_application(&application(), &environment(), instance(), &resolutions())
+            .expect("compile application succeeds");
+    let creator = EnvironmentId::parse("env-deleted-01").expect("the value parses");
+    let name =
+        piqueld_core::DockerVolumeName::parse("piqueld-volume-attached").expect("the value parses");
+    desired.bind_volumes(&BTreeMap::from([(
+        piqueld_core::VolumeName::parse("data").expect("the value parses"),
+        piqueld_core::resource::BoundVolume {
+            docker_name: name.clone(),
+            owner: creator,
+        },
+    )]));
+    assert_eq!(desired.services[0].mounts[0].volume_name, name);
+    let mut observed = observed(&desired);
+    observed.other_volumes = std::mem::take(&mut observed.volumes);
+    let plan = Plan::from_request(
+        &PlanRequest::Reconcile {
+            desired: desired.clone(),
+        },
+        &observed,
+    );
+    assert!(!plan.has_mutations() && !plan.is_blocked());
+
+    observed.other_volumes[0].labels = desired.networks[0].labels.clone();
+    let squatted = Plan::from_request(&PlanRequest::Reconcile { desired }, &observed);
+    assert!(squatted.is_blocked());
 }

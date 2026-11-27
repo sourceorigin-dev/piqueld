@@ -20,6 +20,7 @@ mod secrets;
 mod snapshot;
 mod support;
 mod traffic;
+mod volumes;
 
 use clap::{CommandFactory, FromArgMatches};
 use cli::Cli;

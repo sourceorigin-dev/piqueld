@@ -11,7 +11,7 @@ use leptos::task::spawn_local;
 use leptos_router::components::A;
 use leptos_router::hooks::{use_params_map, use_query_map};
 use piqueld_client::{
-    Client, DEFAULT_PAGE_SIZE, Event, EventActor,
+    Client, ClientError, DEFAULT_PAGE_SIZE, Event, EventActor,
     access::{GlobalPermission, Permission},
     audit::{AuditEvent, AuditFilter, AuditLink, AuditOutcome},
     observability::{
@@ -24,6 +24,50 @@ use std::time::Duration;
 
 /// How often [`Refresh::new`] bumps the revision.
 const REFRESH_PERIOD: Duration = Duration::from_secs(5);
+
+/// Outcome of the last action of a list's rows, such as deleting one: an
+/// error or a success notice.
+#[derive(Clone, Copy)]
+pub(super) struct Outcome {
+    /// Whether an action is running, which disables the others.
+    pub(super) busy: RwSignal<bool>,
+    /// The notice to show.
+    pub(super) message: RwSignal<Option<(Tone, String)>>,
+}
+
+impl Outcome {
+    /// No action yet.
+    pub(super) fn new() -> Self {
+        Self {
+            busy: RwSignal::new(false),
+            message: RwSignal::new(None),
+        }
+    }
+
+    /// Runs `request` unless another is running, then shows `success` or
+    /// its error and runs `refresh`.
+    pub(super) fn run<T: 'static>(
+        self,
+        request: impl Future<Output = Result<T, ClientError>> + 'static,
+        success: impl FnOnce(T) -> String + 'static,
+        refresh: Refresh,
+    ) {
+        if self.busy.get_untracked() {
+            return;
+        }
+        self.busy.set(true);
+        self.message.set(None);
+        spawn_local(async move {
+            let message = match request.await {
+                Ok(value) => (Tone::Ok, success(value)),
+                Err(error) => (Tone::Bad, error.user_message()),
+            };
+            self.message.set(Some(message));
+            self.busy.set(false);
+            refresh.request();
+        });
+    }
+}
 
 /// Revision counter that observability resources track to refetch.
 /// Bumped every 5 seconds while the tab is visible, or on demand.
@@ -698,6 +742,7 @@ pub(super) fn SystemPage() -> impl IntoView {
             <super::dashboard::ReadinessPanel />
             <ChecksPanel />
             {loaded(data, "Collecting resource usage…", |stats| resource_stats(&stats))}
+            <super::volumes::DetachedVolumes refresh={refresh} />
         </div>
     }
 }

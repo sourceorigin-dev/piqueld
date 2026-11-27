@@ -9,7 +9,7 @@ use crate::state::ApplicationHealth;
 use leptos::prelude::*;
 use piqueld_client::{
     Client, DiagnosticView, EnvironmentDetailView, ObservedApplicationView, ObservedServiceView,
-    RouteUrl, UrlState, links::ImportState,
+    RouteUrl, UrlState, links::ImportState, volumes::VolumeView,
 };
 
 /// Live runtime detail for an environment page's Overview tab.
@@ -79,6 +79,7 @@ fn detail_view(
                     })
             }} {runtime_status_card(detail, signals, client)} {urls_card(detail.urls.as_deref())}
             {links_card(detail)} {observed_card(&detail.observed)}
+            {volumes_card(detail.volumes.as_deref(), detail.environment.preview().is_some())}
             {diagnostics_card(&detail.diagnostics)}
         </div>
     }
@@ -217,6 +218,70 @@ fn runtime_status_card(
                 <dd>{timestamp(app.updated_at_ms)}</dd>
             </dl>
         </section>
+    }
+    .into_any()
+}
+
+/// The volumes the environment binds its volume names to, with their
+/// measured size, or why there are none; a `preview`'s go with it.
+fn volumes_card(volumes: Option<&[VolumeView]>, preview: bool) -> AnyView {
+    let fate = if preview {
+        "Deleting the preview deletes them with their data."
+    } else {
+        "Deleting the environment keeps them as detached volumes."
+    };
+    view! {
+        <section class="card card-flush" aria-labelledby="volumes-title">
+            <header>
+                <div>
+                    <h3 id="volumes-title">"Volumes"</h3>
+                    <p>"The volume each volume name points at. " {fate}</p>
+                </div>
+            </header>
+            {match volumes {
+                None => empty("This daemon does not track volumes."),
+                Some([]) => empty("This environment has no volumes yet. Its first deployment that declares one creates it."),
+                Some(volumes) => {
+                    view! {
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>"Name"</th>
+                                    <th>"Volume"</th>
+                                    <th>"Docker name"</th>
+                                    <th class="num">"Size"</th>
+                                    <th>"Measured"</th>
+                                </tr>
+                            </thead>
+                            <tbody>{volumes.iter().map(volume_row).collect_view()}</tbody>
+                        </table>
+                    }
+                        .into_any()
+                }
+            }}
+        </section>
+    }
+    .into_any()
+}
+
+/// One bound volume: its name, IDs and measured size.
+fn volume_row(volume: &VolumeView) -> AnyView {
+    let name = volume
+        .binding
+        .as_ref()
+        .map_or_else(String::new, |binding| binding.name.to_string());
+    view! {
+        <tr>
+            <td>{name}</td>
+            <td>
+                <code>{volume.id.to_string()}</code>
+            </td>
+            <td>
+                <code>{volume.docker_name.to_string()}</code>
+            </td>
+            <td class="num">{volume.size()}</td>
+            <td class="muted">{volume.measured_at_ms.map_or_else(|| "Not yet".into_any(), when)}</td>
+        </tr>
     }
     .into_any()
 }

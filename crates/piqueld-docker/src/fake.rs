@@ -10,7 +10,7 @@ use super::{
 use async_trait::async_trait;
 use futures_util::StreamExt as _;
 use piqueld_core::resource::{
-    APPLICATION_LABEL, Convergence, DesiredService, INSTANCE_LABEL, MANAGED_LABEL,
+    APPLICATION_LABEL, Convergence, DesiredService, INSTANCE_LABEL, MANAGED_LABEL, ManagedVolume,
     ObservedApplication, ObservedNetwork, ObservedService, ObservedTask, ObservedVolume,
     RuntimeMessage, SERVICE_LABEL, SPEC_HASH_LABEL, TaskState, image_repository,
 };
@@ -984,9 +984,14 @@ impl DockerApi for FakeDocker {
         observed
             .services
             .retain(|service| relevant(&service.name, &service.labels));
-        observed
+        (observed.volumes, observed.other_volumes) = observed
             .volumes
-            .retain(|volume| relevant(&volume.name, &volume.labels));
+            .into_iter()
+            .filter(|volume| {
+                relevant(&volume.name, &volume.labels)
+                    || volume.labels.get(MANAGED_LABEL).map(String::as_str) == Some("true")
+            })
+            .partition(|volume| relevant(&volume.name, &volume.labels));
         (observed.networks, observed.linked_networks) = observed
             .networks
             .into_iter()
@@ -1278,6 +1283,31 @@ impl DockerApi for FakeDocker {
         }
         observed.networks.retain(|network| network.name != name);
         Ok(())
+    }
+
+    async fn volumes(&self, instance: &InstanceId) -> Result<Vec<ManagedVolume>, DockerError> {
+        let _probe = self.observations.enter().await;
+        Ok(self
+            .observed
+            .lock()
+            .await
+            .volumes
+            .iter()
+            .filter_map(|volume| ManagedVolume::of(&volume.name, &volume.labels, instance))
+            .collect())
+    }
+
+    /// Every volume uses no space.
+    async fn volume_sizes(&self) -> Result<BTreeMap<String, u64>, DockerError> {
+        let _probe = self.observations.enter().await;
+        Ok(self
+            .observed
+            .lock()
+            .await
+            .volumes
+            .iter()
+            .map(|volume| (volume.name.clone(), 0))
+            .collect())
     }
 
     async fn remove_volume(

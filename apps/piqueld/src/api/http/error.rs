@@ -11,8 +11,9 @@ use axum::{
 use piqueld_core::api::{ApiErrorCode, ErrorBody};
 use piqueld_core::{
     ApplicationIdError, EnvironmentIdError, EnvironmentNameError, GitBranchError, PreviewSlotError,
+    VolumeIdError, VolumeNameError,
 };
-use piqueld_store::{PromotionError, RestoreError, StoreError};
+use piqueld_store::{PromotionError, RestoreError, StoreError, VolumeError};
 use serde_json::{Value, json};
 
 /// Handler failure rendered as a structured JSON `ErrorBody` response.
@@ -303,6 +304,26 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, code, error.to_string()).details(details)
     }
 
+    /// Maps refused volume changes: conflicts with what the volume or the
+    /// environment's bindings are now.
+    fn from_volume_error(error: &VolumeError) -> Self {
+        let (code, details) = match error {
+            VolumeError::NameBound { environment, name } => (
+                ApiErrorCode::VolumeNameBound,
+                json!({"environment": environment, "name": name}),
+            ),
+            VolumeError::Attached { volume } => {
+                (ApiErrorCode::VolumeAttached, json!({"volume": volume}))
+            }
+            VolumeError::Preview => (ApiErrorCode::VolumePreview, Value::Null),
+            VolumeError::NameUndeclared { environment, name } => (
+                ApiErrorCode::VolumeNameUndeclared,
+                json!({"environment": environment, "name": name}),
+            ),
+        };
+        Self::new(StatusCode::CONFLICT, code, error.to_string()).details(details)
+    }
+
     /// Maps hostname reservation conflicts selected by `From<StoreError>`,
     /// naming the hostname, and the sibling environment reserving it if any.
     ///
@@ -358,6 +379,7 @@ impl From<StoreError> for ApiError {
             | StoreError::PreviewLimitReached(_)) => Self::from_environment_error(error),
             StoreError::Promotion(error) => Self::from_promotion_error(&error),
             StoreError::Restore(error) => Self::from_restore_error(&error),
+            StoreError::Volume(error) => Self::from_volume_error(&error),
             StoreError::GenerationConflict { expected, actual } => Self::new(
                 StatusCode::CONFLICT,
                 ApiErrorCode::GenerationConflict,
@@ -541,6 +563,8 @@ invalid_input! {
     EnvironmentNameError => ApiErrorCode::EnvironmentNameInvalid, |_| "environment names must be 1-63 lowercase letters, digits, or hyphens, start with a letter, and end with a letter or digit";
     GitBranchError => ApiErrorCode::GitBranchInvalid, |error| error.to_string();
     PreviewSlotError => ApiErrorCode::PreviewSlotInvalid, |error| error.to_string();
+    VolumeIdError => ApiErrorCode::VolumeIdInvalid, |_| "volume ID is invalid";
+    VolumeNameError => ApiErrorCode::NameInvalid, |error| error.to_string();
     piqueld_core::observability::DestinationNameError => ApiErrorCode::DestinationNameInvalid, |error| error.to_string();
 }
 

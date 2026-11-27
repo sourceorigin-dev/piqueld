@@ -496,6 +496,7 @@ impl Store {
         )
         .map_err(ValidationErrors::from)?;
         Box::pin(Self::bind_links_on(tx, &mut resolved)).await?;
+        Self::bind_volumes_on(tx, &mut resolved).await?;
         let (manifest, variables) = Self::snapshot_json(Some(&rendering))?;
         let template = release
             .template()

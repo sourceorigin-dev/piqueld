@@ -34,8 +34,11 @@ Pruning always keeps the deployments still needed, such as the environment's
 current one; see
 [how long history is kept](../../user/operations/history.md#how-long-history-is-kept).
 Environment deletion removes the environment's database records,
-environment-owned history and request receipts after runtime verification;
-Docker volumes remain. The application is removed with its last environment
+environment-owned history and request receipts after runtime verification.
+Its volumes stay in the `volumes` table, detached: `volume_bindings`, which
+maps each manifest volume name of an environment to a volume, goes with the
+environment, and the volume records where it was bound. A preview's own
+volumes go with it. The application is removed with its last environment
 when its deletion was requested. Daemon-scoped failures retain optional
 environment context after deletion. Application events use
 `retention.event_days`; shared daemon events use `retention.daemon_event_days`

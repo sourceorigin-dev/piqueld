@@ -51,6 +51,8 @@ pub mod previews;
 pub mod sync;
 /// Control-plane status contracts.
 pub mod system;
+/// Volumes the daemon tracks, and environments' bindings to them.
+pub mod volumes;
 
 mod builds;
 mod client;

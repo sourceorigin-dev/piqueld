@@ -29,6 +29,17 @@ validated_string!(
 );
 
 validated_string!(
+    /// Stable volume identity, assigned by persistence as `volume-…`. An
+    /// environment binds each manifest volume name to one; volumes created
+    /// since volumes were tracked take their Docker name from it, so it is
+    /// short enough to fit one after `piqueld-`.
+    VolumeId,
+    VolumeIdError,
+    "volume IDs must be 8-55 lowercase ASCII letters, digits, or internal hyphens",
+    |value: &str| is_lowercase_label(value, 8..=55)
+);
+
+validated_string!(
     /// Stable release identity, assigned by persistence when a preparation
     /// records content its application has no release for yet.
     ReleaseId,

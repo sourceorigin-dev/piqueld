@@ -62,10 +62,22 @@ pub(super) fn observed_view(
             }
         })
         .collect();
+    let attached = observed
+        .other_volumes
+        .iter()
+        .filter(|volume| {
+            stored.resolved.iter().any(|resolved| {
+                resolved
+                    .volumes
+                    .iter()
+                    .any(|desired| desired.name.as_str() == volume.name)
+            })
+        })
+        .count();
     ObservedApplicationView {
         services,
         network_count: u32::try_from(observed.networks.len()).unwrap_or(u32::MAX),
-        volume_count: u32::try_from(observed.volumes.len()).unwrap_or(u32::MAX),
+        volume_count: u32::try_from(observed.volumes.len() + attached).unwrap_or(u32::MAX),
     }
 }
 

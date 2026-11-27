@@ -111,10 +111,12 @@ permissions! {
     GlobalPermission {
         /// Create applications. The creator receives matching grants on them.
         AppsCreate => "apps:create", "Create applications",
-        /// Read daemon status, configuration, resources, and daemon history.
-        SystemRead => "system:read", "Read daemon configuration, resources, history and notifications",
-        /// Recover the secret key and retry notification deliveries.
-        SystemOperate => "system:operate", "Recover the secret key and retry notifications",
+        /// Read daemon status, configuration, resources, volumes, and daemon
+        /// history.
+        SystemRead => "system:read", "Read daemon configuration, resources, volumes, history and notifications",
+        /// Recover the secret key, retry notification deliveries, and attach
+        /// and delete detached volumes.
+        SystemOperate => "system:operate", "Recover the secret key, retry notifications, and attach and delete detached volumes",
         /// Manage other accounts with equal or less access, and invitations.
         AccountsManage => "accounts:manage", "Manage accounts with equal or less access, and invitations",
         /// Read every account's audit trail; everyone reads their own.

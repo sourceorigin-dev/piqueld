@@ -252,6 +252,7 @@ impl Store {
         target.name = name.clone();
         let bindings = std::mem::take(&mut target.bindings);
         Box::pin(Self::bind_links_from_on(tx, &mut target, &bindings)).await?;
+        Self::bind_volumes_on(tx, &mut target).await?;
         let origin = serde_json::to_string(&DeploymentOrigin::Restore {
             deployment: deployment.to_owned(),
             rolled_back: rolled_back.map(str::to_owned),
