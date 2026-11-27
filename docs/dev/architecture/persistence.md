@@ -90,8 +90,9 @@ with. Tests
 that need sub-second timeouts fix them on the controller instead.
 
 To add a setting, declare it in `settings!`, read it from `Store::settings`
-where it applies, add its option to the NixOS module with a `null` default,
-and run `just generate`.
+where it applies, and run `just generate`. If it moves out of the
+configuration file, add its path to the NixOS module's `removedSettings`, so
+a configuration that still sets it fails to build with what replaced it.
 
 ## Migrations
 

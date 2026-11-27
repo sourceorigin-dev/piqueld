@@ -11,6 +11,7 @@ crates/piqueld-client/src/paths.rs linguist-generated=true
 docs/user/reference/cli-commands.md linguist-generated=true
 docs/user/reference/manifest-settings.md linguist-generated=true
 docs/user/reference/configuration-settings.md linguist-generated=true
+docs/user/reference/daemon-settings.md linguist-generated=true
 
 # Lockfiles.
 Cargo.lock linguist-generated=true

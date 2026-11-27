@@ -131,6 +131,24 @@ test('daemon settings change in their fields, say why a value is refused, and re
   await expect(unavailable).toContainText('Applies only with a build machine');
   await expect(unavailable.getByRole('combobox')).toHaveCount(0);
 
+  // A change made elsewhere doesn't replace what is being typed: Escape
+  // then shows it.
+  await days.fill('45');
+  const elsewhere = await page.evaluate(async () => (await fetch('/api/v1/system/settings/retention.event_days', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ value: 120 }),
+  })).status);
+  expect(elsewhere).toBe(200);
+  const daemonEvents = page.getByRole('textbox', { name: 'Daemon events (days)', exact: true });
+  await daemonEvents.fill('100');
+  await daemonEvents.press('Enter');
+  await expect(row('retention.daemon_event_days')).toContainText('Saved');
+  await expect(events).toContainText('Not saved');
+  await expect(days).toHaveValue('45');
+  await days.press('Escape');
+  await expect(days).toHaveValue('120');
+
   // The host's settings follow, read-only.
   await expect(page.getByRole('heading', { name: 'Server', exact: true })).toBeVisible();
 });

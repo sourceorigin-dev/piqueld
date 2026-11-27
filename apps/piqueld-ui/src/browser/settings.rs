@@ -206,16 +206,20 @@ impl Field {
                 })
         });
         let done = RwSignal::new(None::<(String, Value)>);
-        Effect::new(move |_| {
+        Effect::new(move |shown: Option<String>| {
             setting.with(|setting| {
-                draft.set(text(&setting.value));
+                let value = text(&setting.value);
+                if shown.is_none_or(|shown| draft.with_untracked(|draft| draft.trim() == shown)) {
+                    draft.set(value.clone());
+                }
                 if done.with_untracked(|done| {
                     done.as_ref()
                         .is_some_and(|(_, left)| *left != setting.value)
                 }) {
                     done.set(None);
                 }
-            });
+                value
+            })
         });
         Self {
             setting,
