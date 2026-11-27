@@ -23,8 +23,8 @@
 //! is replaced.
 
 use super::{Ingress, TAILSCALE_IMAGE, gateway::TMPFS};
+use super::{IngressError, Result};
 use crate::tailnet::ProxyListener;
-use anyhow::{Context, Result};
 use piqueld_config::directories::PrivateFile;
 use piqueld_config::tailscale::LocalApi;
 use piqueld_config::{Credential, PrivateIngressConfig};
@@ -170,10 +170,7 @@ impl Ingress {
         let key = PrivateFile::at(config.join("auth-key"));
         match &node.auth_key {
             Some(key_value) => key.write(key_value.expose()).await?,
-            None => key
-                .remove()
-                .await
-                .context("remove the unconfigured auth key")?,
+            None => key.remove().await.map_err(IngressError::RemoveAuthKey)?,
         }
         self.ensure_image(TAILSCALE_IMAGE).await
     }
@@ -181,11 +178,7 @@ impl Ingress {
     /// The node's login state and tailnet addresses from its `LocalAPI`. Relays
     /// a new login URL to daemon logs once.
     pub(super) async fn node_status(&self, node: &Node) -> Result<PrivateIngressStatus> {
-        let status = node
-            .api
-            .status()
-            .await
-            .context("read the apps node status")?;
+        let status = node.api.status().await.map_err(IngressError::NodeStatus)?;
         let login_url = Some(status.auth_url.clone()).filter(|url| !url.is_empty());
         let mut relayed = node.login_url.lock();
         if login_url.is_some() && *relayed != login_url {
@@ -267,9 +260,9 @@ pub(super) struct Subnet {
 #[error(
     "ingress network subnet {subnet} overlaps the tailnet ranges the private listener trusts; this environment's routes are withdrawn until Swarm allocates its network outside 100.64.0.0/10 and fd7a:115c:a1e0::/48"
 )]
-pub(super) struct TailnetOverlap {
+pub struct TailnetOverlap {
     /// The overlapping subnet, as Docker reported it.
-    pub(super) subnet: String,
+    pub subnet: String,
 }
 
 impl Subnet {

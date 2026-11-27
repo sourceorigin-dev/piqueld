@@ -9,8 +9,8 @@
 //! be sent with an open [`Journaled`] action, which commits intent before the
 //! request is made. Docker changes go through [`DockerChanges`], whose handle
 //! only [`Journaled::change`] lends out.
+use super::{IngressError, Result};
 use crate::operations::OperationError;
-use anyhow::{Context, Result};
 use hyper::Method;
 pub use piqueld_config::unix_http::ResponseError;
 use piqueld_config::unix_http::UnixHttp;
@@ -33,8 +33,7 @@ pub(super) struct DockerChanges(InfrastructureChanges);
 impl DockerChanges {
     /// Connects to the engine at `socket`; see [`InfrastructureChanges::connect`].
     pub(super) fn connect(socket: &std::path::Path) -> Result<Self> {
-        let changes =
-            InfrastructureChanges::connect(socket).context("Docker socket is not UTF-8")?;
+        let changes = InfrastructureChanges::connect(socket).map_err(IngressError::Socket)?;
         Ok(Self(changes))
     }
 }
@@ -65,9 +64,12 @@ impl<'a> Journaled<'a> {
     /// Commits intent for `request`, then sends it. A future sends nothing
     /// until awaited, so a request built first is still never made unless its
     /// intent committed.
-    async fn send<T, E>(&self, request: impl Future<Output = Result<T, E>>) -> Result<T>
+    async fn send<T, E>(
+        &self,
+        request: impl Future<Output = std::result::Result<T, E>>,
+    ) -> Result<T>
     where
-        anyhow::Error: From<E>,
+        IngressError: From<E>,
     {
         self.request().await?;
         Ok(request.await?)
@@ -84,8 +86,8 @@ impl<'a> Journaled<'a> {
         change: impl FnOnce(&'a InfrastructureChanges) -> F,
     ) -> Result<T>
     where
-        F: Future<Output = Result<T, E>>,
-        anyhow::Error: From<E>,
+        F: Future<Output = std::result::Result<T, E>>,
+        IngressError: From<E>,
     {
         self.send(change(self.docker)).await
     }
@@ -191,7 +193,7 @@ impl CaddyApi {
         if body.is_empty() {
             Ok(Value::Null)
         } else {
-            serde_json::from_slice(&body).context("decode ingress HTTP response")
+            serde_json::from_slice(&body).map_err(IngressError::DecodeResponse)
         }
     }
 

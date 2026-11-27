@@ -10,12 +10,12 @@
 //! history. Helpers taking a [`Journaled`] run inside their caller's action.
 
 use super::{
-    CADDY_IMAGE, Ingress,
+    CADDY_IMAGE, Ingress, IngressError, Result,
     node::{PRIVATE_HTTPS_PORT, Subnet, TailnetOverlap},
     wire::Journaled,
 };
-use anyhow::{Context, Result, ensure};
 use piqueld_config::directories::PrivateFile;
+use piqueld_core::ErrorChain as _;
 use piqueld_core::Phase;
 use piqueld_core::wait;
 use piqueld_core::{
@@ -35,7 +35,7 @@ use std::{
 /// failures, its message carries no Docker response body, so the ingress
 /// health message shows it.
 #[derive(Debug, thiserror::Error)]
-pub(super) enum UnmetRequirement {
+pub enum UnmetRequirement {
     /// The engine does not support the [gateway
     /// priority](piqueld_docker::EngineVersion::supports_gateway_priority)
     /// that keeps the edge network the gateway's default route.
@@ -71,13 +71,14 @@ impl Ingress {
     /// Rejects resources that exist under a managed name but were not created
     /// by this installation's gateway.
     fn check_owner(&self, labels: &Value) -> Result<()> {
-        ensure!(
-            labels[MANAGED_LABEL] == "true"
-                && labels[INSTANCE_LABEL] == self.instance_id
-                && labels[INGRESS_LABEL] == "true",
-            "gateway resource is not owned by this installation"
-        );
-        Ok(())
+        if labels[MANAGED_LABEL] == "true"
+            && labels[INSTANCE_LABEL] == self.instance_id
+            && labels[INGRESS_LABEL] == "true"
+        {
+            Ok(())
+        } else {
+            Err(IngressError::NotOwned)
+        }
     }
 
     /// Inspects the serving gateway container, if it exists.
@@ -166,7 +167,7 @@ impl Ingress {
             return Err(failure);
         }
         if let Err(error) = self.remove_edge_network().await {
-            tracing::warn!(network=%self.name, error=format!("{error:#}"), "managed ingress edge network not removed");
+            tracing::warn!(network=%self.name, error=error.chain(), "managed ingress edge network not removed");
         }
         Ok(())
     }
@@ -179,7 +180,9 @@ impl Ingress {
             return Ok(());
         };
         self.check_owner(&network["Labels"])?;
-        let id = network["Id"].as_str().context("network ID missing")?;
+        let id = network["Id"]
+            .as_str()
+            .ok_or(IngressError::NetworkIdMissing)?;
         let journal = self
             .journal(Phase::IngressRemoveNetwork, &self.name)
             .await?;
@@ -202,7 +205,9 @@ impl Ingress {
     /// Force-removes a container by name if it exists.
     pub(super) async fn remove_container(&self, journal: &Journaled<'_>, name: &str) -> Result<()> {
         if let Some(container) = self.named_container(name).await? {
-            let id = container["Id"].as_str().context("container ID missing")?;
+            let id = container["Id"]
+                .as_str()
+                .ok_or(IngressError::ContainerIdMissing)?;
             journal.change(|docker| docker.remove_container(id)).await?;
             tracing::info!(container=%name,"removed managed ingress container");
         }
@@ -213,11 +218,11 @@ impl Ingress {
     /// priority](piqueld_docker::EngineVersion::supports_gateway_priority).
     async fn check_version(&self) -> Result<()> {
         let version = self.docker.version().await?;
-        ensure!(
-            version.supports_gateway_priority(),
-            UnmetRequirement::Docker(version)
-        );
-        Ok(())
+        if version.supports_gateway_priority() {
+            Ok(())
+        } else {
+            Err(UnmetRequirement::Docker(version).into())
+        }
     }
 
     /// The subnets of the edge network: the only peers whose PROXY headers the
@@ -228,9 +233,11 @@ impl Ingress {
             .docker
             .inspect_network(&self.name)
             .await?
-            .context("gateway edge network is not ready")?;
+            .ok_or(IngressError::EdgeNotReady)?;
         let subnets: Vec<String> = Self::subnets(&network).map(str::to_owned).collect();
-        ensure!(!subnets.is_empty(), "gateway edge network has no subnet");
+        if subnets.is_empty() {
+            return Err(IngressError::EdgeNoSubnet);
+        }
         Ok(subnets)
     }
 
@@ -253,13 +260,13 @@ impl Ingress {
         let container = self
             .container()
             .await?
-            .context("gateway container is not running")?;
+            .ok_or(IngressError::GatewayStopped)?;
         let address: std::net::IpAddr =
             container["NetworkSettings"]["Networks"][&self.name]["IPAddress"]
                 .as_str()
-                .context("gateway has no edge network address")?
+                .ok_or(IngressError::NoEdgeAddress)?
                 .parse()
-                .context("decode the gateway's edge network address")?;
+                .map_err(IngressError::DecodeEdgeAddress)?;
         Ok(std::net::SocketAddr::new(address, PRIVATE_HTTPS_PORT))
     }
 
@@ -268,10 +275,9 @@ impl Ingress {
     async fn ensure_edge_network(&self) -> Result<()> {
         if let Some(network) = self.docker.inspect_network(&self.name).await? {
             self.check_owner(&network["Labels"])?;
-            ensure!(
-                network["Driver"] == "bridge" && network["Internal"] == false,
-                "gateway egress network configuration conflicts"
-            );
+            if network["Driver"] != "bridge" || network["Internal"] != false {
+                return Err(IngressError::EdgeConflict);
+            }
         } else {
             let journal = self
                 .journal(Phase::IngressCreateNetwork, &self.name)
@@ -323,7 +329,7 @@ impl Ingress {
                     networks.insert(name);
                 }
                 Err(error) => {
-                    let overlap = error.is::<TailnetOverlap>();
+                    let overlap = error.overlaps_tailnet();
                     if !overlap && switching.is_none() {
                         switching = Some(self.switches_mode().await.unwrap_or(false));
                     }
@@ -338,7 +344,7 @@ impl Ingress {
                         accepted.retain(|old| routes.iter().any(|new| new.same_listener(old)));
                         *routes = accepted;
                     }
-                    failures.insert(id.clone(), format!("{error:#}"));
+                    failures.insert(id.clone(), error.chain());
                 }
             }
         }
@@ -359,25 +365,24 @@ impl Ingress {
             .docker
             .inspect_network(name)
             .await?
-            .context("application ingress network is not ready")?;
-        ensure!(
-            network["Labels"][MANAGED_LABEL] == "true"
-                && network["Labels"][INSTANCE_LABEL] == self.instance_id
-                && network["Labels"][APPLICATION_LABEL] == id.as_str(),
-            "application ingress network has conflicting ownership"
-        );
-        ensure!(
-            network["Driver"] == "overlay" && network["Attachable"] == true,
-            "application ingress network must be an attachable overlay"
-        );
+            .ok_or(IngressError::IngressNetworkNotReady)?;
+        if network["Labels"][MANAGED_LABEL] != "true"
+            || network["Labels"][INSTANCE_LABEL] != self.instance_id
+            || network["Labels"][APPLICATION_LABEL] != id.as_str()
+        {
+            return Err(IngressError::IngressNetworkOwnership);
+        }
+        if network["Driver"] != "overlay" || network["Attachable"] != true {
+            return Err(IngressError::IngressNetworkKind);
+        }
         if self.node.is_some() {
-            ensure!(
-                Self::subnets(&network).next().is_some(),
-                "ingress network has no subnet to check against the tailnet ranges"
-            );
+            if Self::subnets(&network).next().is_none() {
+                return Err(IngressError::IngressNetworkNoSubnet);
+            }
             for subnet in Self::subnets(&network) {
-                let parsed = Subnet::parse(subnet)
-                    .with_context(|| format!("decode ingress network subnet {subnet}"))?;
+                let parsed = Subnet::parse(subnet).ok_or_else(|| IngressError::DecodeSubnet {
+                    subnet: subnet.to_owned(),
+                })?;
                 if parsed.overlaps_tailnet() {
                     let subnet = subnet.to_owned();
                     return Err(TailnetOverlap { subnet }.into());
@@ -590,11 +595,12 @@ impl Ingress {
         let result = journal
             .change(|docker| async move {
                 let pulled = tokio::time::timeout(PULL_TIMEOUT, docker.pull_image(image));
-                Ok::<_, anyhow::Error>(
-                    pulled
-                        .await
-                        .with_context(|| format!("pull {image} timed out"))??,
-                )
+                Ok::<_, IngressError>(pulled.await.map_err(|source| {
+                    IngressError::PullTimedOut {
+                        image: image.to_owned(),
+                        source,
+                    }
+                })??)
             })
             .await;
         journal.finish(result).await
@@ -639,14 +645,11 @@ impl Ingress {
                 && !networks.contains(&DockerNetworkName::for_ingress(id).to_string())
         }) {
             let Some(container) = self.container().await?.filter(Self::running) else {
-                anyhow::bail!(
-                    "cannot replace gateway: retained routes for application {id} lack a verified network and the old gateway is not running"
-                );
+                return Err(IngressError::ReplaceNotRunning { id: id.clone() });
             };
-            ensure!(
-                Self::publishes_ports(&container) == self.tunnel.is_none(),
-                "cannot switch between direct and tunnel ingress: retained routes for application {id} lack a verified network; repair it or withdraw its routes"
-            );
+            if Self::publishes_ports(&container) != self.tunnel.is_none() {
+                return Err(IngressError::SwitchBlocked { id: id.clone() });
+            }
             tracing::warn!(environment_id=%id,
                 "deferring gateway replacement until retained route networks are repaired or routes are withdrawn");
             return Ok(());
@@ -657,7 +660,7 @@ impl Ingress {
         let result = self.cut_over(&journal, table, networks, spec).await;
         journal.finish(result).await?;
         if let Err(error) = self.remove_stale_container(&self.previous_name()).await {
-            tracing::warn!(gateway=%self.name, error=%format!("{error:#}"),
+            tracing::warn!(gateway=%self.name, error=%error.chain(),
                 "replaced gateway could not be removed; recovery retries the cleanup");
         }
         Ok(())
@@ -703,10 +706,13 @@ impl Ingress {
         }
         .await;
         if let Err(error) = result {
-            self.restore_gateway(journal).await.with_context(|| {
-                format!("gateway replacement failed ({error:#}); rollback also failed")
-            })?;
-            return Err(error.context("gateway replacement failed; previous gateway restored"));
+            if let Err(source) = self.restore_gateway(journal).await {
+                return Err(IngressError::RollbackFailed {
+                    replacement: Box::new(error),
+                    source: Box::new(source),
+                });
+            }
+            return Err(IngressError::ReplacementFailed(Box::new(error)));
         }
         PrivateFile::at(self.rollback_path()).remove().await?;
         Ok(())
@@ -730,13 +736,14 @@ impl Ingress {
         self.start_named(journal, name).await?;
         let exited = journal.change(|docker| docker.wait_container(name)).await?;
         if exited != Some(0) {
-            let diagnostics = self.docker.log_lines(name, 20, None).await.context(
-                "replacement Caddy configuration validation failed; could not read diagnostics",
-            )?;
-            anyhow::bail!(
-                "replacement Caddy configuration validation failed: {}",
-                diagnostics.join("\n")
-            );
+            let diagnostics = self
+                .docker
+                .log_lines(name, 20, None)
+                .await
+                .map_err(IngressError::ValidationDiagnostics)?;
+            return Err(IngressError::ValidationFailed {
+                diagnostics: diagnostics.join("\n"),
+            });
         }
         self.remove_container(journal, name).await
     }
@@ -869,16 +876,11 @@ impl Ingress {
     async fn start_container(&self, journal: &Journaled<'_>) -> Result<()> {
         self.start_named(journal, &self.name)
             .await
-            .map_err(|error| {
-                let taken = matches!(
-                    error.downcast_ref(),
-                    Some(piqueld_docker::DockerError::PortInUse(_))
-                );
-                if taken {
-                    error.context(UnmetRequirement::Ports)
-                } else {
-                    error
+            .map_err(|error| match error {
+                IngressError::Docker(piqueld_docker::DockerError::PortInUse(_)) => {
+                    UnmetRequirement::Ports.into()
                 }
+                error => error,
             })?;
         wait::poll_until(STARTUP_TIMEOUT, STARTUP_POLL, || async {
             match self.caddy.get("/config/").await {
@@ -890,7 +892,7 @@ impl Ingress {
             }
         })
         .await
-        .context("Caddy administration did not become ready after startup; inspect gateway logs")?;
+        .ok_or(IngressError::CaddyNotReady)?;
         tracing::info!(gateway=%self.name,image=CADDY_IMAGE,"started managed ingress");
         Ok(())
     }
@@ -909,10 +911,9 @@ impl Ingress {
             current == spec || (empty(current) && empty(spec))
         }
         for field in ["Image", "User", "Cmd"] {
-            ensure!(
-                current["Config"][field] == spec[field],
-                "managed container {field} conflicts with managed configuration"
-            );
+            if current["Config"][field] != spec[field] {
+                return Err(IngressError::ContainerField { field });
+            }
         }
         for field in [
             "Binds",
@@ -926,40 +927,33 @@ impl Ingress {
             "NetworkMode",
         ] {
             if field == "RestartPolicy" {
-                ensure!(
-                    current["HostConfig"][field]["Name"] == "unless-stopped",
-                    "managed container restart policy conflicts"
-                );
-            } else {
-                ensure!(
-                    same(&current["HostConfig"][field], &spec["HostConfig"][field]),
-                    "managed container host configuration {field} conflicts"
-                );
+                if current["HostConfig"][field]["Name"] != "unless-stopped" {
+                    return Err(IngressError::RestartPolicy);
+                }
+            } else if !same(&current["HostConfig"][field], &spec["HostConfig"][field]) {
+                return Err(IngressError::HostConfiguration { field });
             }
         }
-        ensure!(
-            same(
-                &current["HostConfig"]["PortBindings"],
-                &spec["HostConfig"]["PortBindings"]
-            ),
-            "managed container port bindings conflict"
-        );
+        if !same(
+            &current["HostConfig"]["PortBindings"],
+            &spec["HostConfig"]["PortBindings"],
+        ) {
+            return Err(IngressError::PortBindings);
+        }
         let environment = current["Config"]["Env"]
             .as_array()
-            .context("managed container environment is absent")?;
+            .ok_or(IngressError::EnvironmentAbsent)?;
         for expected in spec["Env"]
             .as_array()
-            .context("managed environment is absent")?
+            .ok_or(IngressError::SpecEnvironmentAbsent)?
         {
-            ensure!(
-                environment.contains(expected),
-                "managed container environment conflicts"
-            );
+            if !environment.contains(expected) {
+                return Err(IngressError::EnvironmentConflict);
+            }
         }
-        ensure!(
-            current["HostConfig"]["Privileged"] != true,
-            "managed containers must not be privileged"
-        );
+        if current["HostConfig"]["Privileged"] == true {
+            return Err(IngressError::Privileged);
+        }
         Ok(())
     }
 
@@ -974,7 +968,7 @@ impl Ingress {
         let container = self
             .named_container(name)
             .await?
-            .context("gateway container disappeared")?;
+            .ok_or(IngressError::GatewayDisappeared)?;
         for network in Self::missing_networks(&container, desired) {
             journal
                 .change(|docker| docker.connect_network(network, name))
@@ -1056,7 +1050,7 @@ impl Ingress {
         let container = self
             .container()
             .await?
-            .context("gateway container disappeared")?;
+            .ok_or(IngressError::GatewayDisappeared)?;
         let desired = self.configuration(table).await?;
         let reload = self.caddy.get("/config/").await? != desired;
         let exposing = self.exposing_networks(&container, networks).await?;
@@ -1167,11 +1161,9 @@ impl Ingress {
 mod tests {
     use super::UnmetRequirement;
     use crate::ingress::tests::Engine;
-    use anyhow::Context;
 
     /// Docker refusing the gateway start over a taken host port is named as
-    /// the cause, through the contexts the failure gains on its way to the
-    /// health message.
+    /// the cause.
     #[tokio::test]
     async fn a_taken_host_port_is_an_unmet_requirement() {
         let engine = Engine::serving(|_| {
@@ -1192,10 +1184,9 @@ mod tests {
         let error = journal
             .finish(result)
             .await
-            .context("prepare the Caddy gateway")
             .expect_err("the journal rejects a failing phase");
         assert!(
-            matches!(error.downcast_ref(), Some(UnmetRequirement::Ports)),
+            matches!(error.unmet(), Some(UnmetRequirement::Ports)),
             "{error:?}"
         );
     }

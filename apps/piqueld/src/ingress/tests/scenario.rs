@@ -1,6 +1,7 @@
 //! A gateway in the isolated Docker harness, with one application deployed,
 //! which the `ingress_caddy` tests take through their steps.
 use super::*;
+use piqueld_core::ErrorChain as _;
 use piqueld_core::wait;
 
 /// The gateway's internal CA, below the scenario's data directory.
@@ -131,7 +132,7 @@ impl Scenario {
         if result.is_err()
             && let Err(error) = scenario.gateway.relay_logs().await
         {
-            eprintln!("could not relay the gateway's logs: {error:#}");
+            eprintln!("could not relay the gateway's logs: {}", error.chain());
         }
         cleanup(&scenario).await;
         scenario

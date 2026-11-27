@@ -329,7 +329,7 @@ impl OperationError {
     /// `DnsRecordsFailed` for route DNS records.
     pub(crate) fn ingress_diagnostic(
         code: DiagnosticCode,
-        error: &anyhow::Error,
+        error: &(dyn std::error::Error + 'static),
     ) -> piqueld_core::observability::Diagnostic {
         let summary = match code {
             DiagnosticCode::CertificateRenewalFailed => {
@@ -342,7 +342,7 @@ impl OperationError {
                 "managed ingress could not apply a gateway change; see ingress health and daemon logs"
             }
         };
-        Self::diagnostic_from(code, summary.into(), error.as_ref())
+        Self::diagnostic_from(code, summary.into(), error)
     }
 
     /// Builds a diagnostic with a fresh ID, then walks up to eight levels of the

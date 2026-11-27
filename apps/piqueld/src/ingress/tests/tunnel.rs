@@ -7,6 +7,7 @@ use super::{
 };
 use crate::ingress::Ingress;
 use piqueld_config::{Credential, TunnelConfig, TunnelCredentials};
+use piqueld_core::ErrorChain as _;
 use piqueld_core::{
     EnvironmentId,
     api::PublicIngressStatus,
@@ -210,7 +211,9 @@ async fn the_tunnel_is_connected_only_while_its_healthcheck_passes() {
 
 /// Whether `ingress` may replace a running direct-mode gateway while an
 /// application's retained routes lack a verified network.
-async fn defers_replacing_a_direct_gateway(tunnel: Option<&TunnelConfig>) -> anyhow::Result<()> {
+async fn defers_replacing_a_direct_gateway(
+    tunnel: Option<&TunnelConfig>,
+) -> Result<(), crate::ingress::IngressError> {
     let engine = Engine::serving(|store| {
         let container = owned_container(
             store,
@@ -252,7 +255,8 @@ async fn a_deferred_replacement_never_switches_modes() {
         error
             .to_string()
             .contains("cannot switch between direct and tunnel"),
-        "{error:#}"
+        "{}",
+        error.chain()
     );
 }
 
@@ -365,8 +369,11 @@ async fn disabled_ingress_stops_containers_even_if_the_credentials_remain() {
         .await
         .expect_err("synchronizing fails");
     assert!(
-        format!("{error:#}").contains("remove the Cloudflare Tunnel credentials"),
-        "{error:#}"
+        error
+            .chain()
+            .contains("remove the Cloudflare Tunnel credentials"),
+        "{}",
+        error.chain()
     );
     let gateway = format!("/containers/{}/json", disabled.name);
     assert!(inspected.lock().iter().any(|path| path.ends_with(&gateway)));
