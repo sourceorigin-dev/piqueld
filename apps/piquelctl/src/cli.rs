@@ -417,6 +417,7 @@ pub(crate) enum Command {
     /// List the volumes the daemon tracks, and attach or delete the detached
     /// volumes deleted environments leave.
     Volume {
+        /// The volume operation to run.
         #[command(subcommand)]
         command: crate::volumes::VolumeCommand,
     },

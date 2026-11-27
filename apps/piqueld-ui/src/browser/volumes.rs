@@ -14,7 +14,10 @@ use piqueld_client::{
 /// `system:operate`. Attaching one is a CLI command, since it names the
 /// environment and volume name to bind.
 #[component]
-pub(super) fn DetachedVolumes(refresh: Refresh) -> impl IntoView {
+pub(super) fn DetachedVolumes(
+    /// Reloads the list when requested.
+    refresh: Refresh,
+) -> impl IntoView {
     let operate = can(Permission::Global(GlobalPermission::SystemOperate));
     let outcome = Outcome::new();
     let data = LocalResource::new(move || {

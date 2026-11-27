@@ -432,7 +432,7 @@ async fn attaching_a_volume_needs_apps_write_and_system_operate() {
     use piqueld_core::access::Denied;
     use piqueld_core::{VolumeId, VolumeName};
     use piqueld_store::{Caller, StoreError};
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("a temporary directory");
     let state = state(&temp).await;
     let database = database(&temp);
     let saved = save(&state, manifest()).await;
@@ -448,8 +448,8 @@ async fn attaching_a_volume_needs_apps_write_and_system_operate() {
     let grants = [("apps:write", None), ("system:operate", None)];
     seed_account(&database, "both", &grants).await;
     let (name, volume) = (
-        VolumeName::parse("data").unwrap(),
-        VolumeId::parse("volume-missing").unwrap(),
+        VolumeName::parse("data").expect("the value parses"),
+        VolumeId::parse("volume-missing").expect("the value parses"),
     );
     let attach = |actor| state.attach_volume(actor, &id, &name, &volume);
     assert!(matches!(

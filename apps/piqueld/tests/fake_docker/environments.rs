@@ -39,7 +39,7 @@ impl EnvironmentHarness {
             None,
         ))
         .await
-        .expect("pin succeeds") else {
+        .expect("creating qa succeeds") else {
             panic!("created staging")
         };
         let generation = saved.generation + 1;
@@ -581,15 +581,15 @@ async fn a_deleted_environments_volume_attached_elsewhere_mounts_with_its_labels
     let [old] = store
         .environment_volumes(&fixture.staging)
         .await
-        .unwrap()
+        .expect("environment volumes succeeds")
         .try_into()
-        .unwrap();
+        .expect("exactly one volume");
     fixture.delete_staging().await;
     let MutationResponse::Environment(qa) = Box::pin(fixture.applications.accept(
         Daemon,
         Mutation::CreateEnvironment {
             application: harness.application.id().clone(),
-            name: EnvironmentName::parse("qa").unwrap(),
+            name: EnvironmentName::parse("qa").expect("the value parses"),
             source: None,
         },
         None,
@@ -597,23 +597,31 @@ async fn a_deleted_environments_volume_attached_elsewhere_mounts_with_its_labels
         None,
     ))
     .await
-    .unwrap() else {
+    .expect("creating qa succeeds") else {
         panic!("created qa")
     };
     store
         .attach_volume(Daemon, &qa.id, &name, &old.id)
         .await
-        .unwrap();
+        .expect("attach volume succeeds");
 
-    fixture.applications.deploy(&qa.id, None).await.unwrap();
+    fixture
+        .applications
+        .deploy(&qa.id, None)
+        .await
+        .expect("deploy succeeds");
     harness.scan().await;
     let operation = store
         .latest_operation_for_environment(&qa.id)
         .await
-        .unwrap()
-        .unwrap();
+        .expect("latest operation for environment succeeds")
+        .expect("qa has an operation");
     assert_eq!(operation.state, OperationState::Succeeded);
-    let observed = harness.docker.observe(&qa.id).await.unwrap();
+    let observed = harness
+        .docker
+        .observe(&qa.id)
+        .await
+        .expect("observe succeeds");
     assert!(
         observed
             .other_volumes
@@ -626,6 +634,17 @@ async fn a_deleted_environments_volume_attached_elsewhere_mounts_with_its_labels
         old.docker_name.as_str()
     );
 
-    harness.controller.survey_volumes(true).await.unwrap();
-    assert_eq!(store.volume(&old.id).await.unwrap().size_bytes, Some(0));
+    harness
+        .controller
+        .survey_volumes(true)
+        .await
+        .expect("survey volumes succeeds");
+    assert_eq!(
+        store
+            .volume(&old.id)
+            .await
+            .expect("volume succeeds")
+            .size_bytes,
+        Some(0)
+    );
 }

@@ -79,7 +79,7 @@ fn detail_view(
                     })
             }} {runtime_status_card(detail, signals, client)} {urls_card(detail.urls.as_deref())}
             {links_card(detail)} {observed_card(&detail.observed)}
-            {volumes_card(detail.volumes.as_deref())}
+            {volumes_card(detail.volumes.as_deref(), detail.environment.preview().is_some())}
             {diagnostics_card(&detail.diagnostics)}
         </div>
     }
@@ -223,16 +223,19 @@ fn runtime_status_card(
 }
 
 /// The volumes the environment binds its volume names to, with their
-/// measured size, or why there are none.
-fn volumes_card(volumes: Option<&[VolumeView]>) -> AnyView {
+/// measured size, or why there are none; a `preview`'s go with it.
+fn volumes_card(volumes: Option<&[VolumeView]>, preview: bool) -> AnyView {
+    let fate = if preview {
+        "Deleting the preview deletes them with their data."
+    } else {
+        "Deleting the environment keeps them as detached volumes."
+    };
     view! {
         <section class="card card-flush" aria-labelledby="volumes-title">
             <header>
                 <div>
                     <h3 id="volumes-title">"Volumes"</h3>
-                    <p>
-                        "The volume each volume name points at. Deleting the environment keeps them as detached volumes."
-                    </p>
+                    <p>"The volume each volume name points at. " {fate}</p>
                 </div>
             </header>
             {match volumes {

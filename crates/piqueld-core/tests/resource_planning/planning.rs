@@ -383,11 +383,13 @@ fn cleanup_plans_are_stable_across_engine_listing_order() {
 #[test]
 fn a_volume_attached_from_another_environment_is_owned_by_its_creator() {
     let mut desired =
-        compile_application(&application(), &environment(), instance(), &resolutions()).unwrap();
-    let creator = EnvironmentId::parse("env-deleted-01").unwrap();
-    let name = piqueld_core::DockerVolumeName::parse("piqueld-volume-attached").unwrap();
+        compile_application(&application(), &environment(), instance(), &resolutions())
+            .expect("compile application succeeds");
+    let creator = EnvironmentId::parse("env-deleted-01").expect("the value parses");
+    let name =
+        piqueld_core::DockerVolumeName::parse("piqueld-volume-attached").expect("the value parses");
     desired.bind_volumes(&BTreeMap::from([(
-        piqueld_core::VolumeName::parse("data").unwrap(),
+        piqueld_core::VolumeName::parse("data").expect("the value parses"),
         piqueld_core::resource::BoundVolume {
             docker_name: name.clone(),
             owner: creator,

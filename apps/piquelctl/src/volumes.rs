@@ -13,6 +13,7 @@ use piqueld_client::{
     volumes::{AttachVolumeRequest, VolumeId, VolumeView},
 };
 
+/// `piquelctl volume` subcommands.
 #[derive(Debug, Subcommand)]
 pub(crate) enum VolumeCommand {
     /// List volumes with their state and size.

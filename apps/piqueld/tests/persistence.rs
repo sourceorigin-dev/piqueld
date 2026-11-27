@@ -66,7 +66,10 @@ async fn fresh_database_persists_resolved_state_and_deletion_intent() {
     let created = save(&store, &application).await;
     let environment = created.environment_id.clone();
     let mut desired = prebuilt::resolve(&application, &environment, store.instance_id());
-    store.bind_existing_volumes(&mut desired).await.unwrap();
+    store
+        .bind_existing_volumes(&mut desired)
+        .await
+        .expect("bind existing volumes succeeds");
     let stored = store.get(&environment).await.expect("application readable");
     assert_eq!(stored.resolved, Some(desired.clone()));
     assert!(!stored.delete_intent());
